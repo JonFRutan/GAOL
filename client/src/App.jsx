@@ -137,12 +137,12 @@ function App() {
           {/* standard inputs with side labels */}
           <div className="form-row">
             <label className="login-label">Username</label>
-            <input placeholder="e.g. Neo" onChange={e => setUsername(e.target.value)} />
+            <input placeholder="e.g. Shadowhawk30" onChange={e => setUsername(e.target.value)} />
           </div>
 
           <div className="form-row">
             <label className="login-label">Room Code</label>
-            <input placeholder="e.g. Room-101" onChange={e => setRoom(e.target.value)} />
+            <input placeholder="e.g. 1987" onChange={e => setRoom(e.target.value)} />
           </div>
 
           {/* extended options for create mode */}
