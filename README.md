@@ -1,6 +1,7 @@
 # GAOL
 ## About
 *GAOL is an otherworldly storyweaver bringing drama and adventure to the worlds of his creation.*  
+  
 Embark on adventures with a party of up to 6 players through persistent worlds. You define your characters, ambitions, and even the secrets you keep from your allies. GAOL will determine the fate of your characters actions and outcomes.
 
 GAOL is a multiplayer AI storyteller based on the *AI Dungeon* Multiplayer and *Death By AI* gameplay. GAOL uses a turn-based system where all player inputs are taken into account to determine the course of action, and uses a novel status system to update your characters and the world as a result.
