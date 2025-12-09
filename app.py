@@ -1,5 +1,5 @@
 #jfr
-import os, json
+import os, json, random, string
 import google.generativeai as genai
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
@@ -23,6 +23,13 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 # {'room_id': GameRoom Object}
 games = {}
 
+#file path for persistent world storage
+WORLDS_FILE = 'worlds.json'
+
+#new global world storage
+# {'world_id': World Object}
+worlds = {} 
+
 #Gemini configurations
 generation_config = {
     "temperature": 1,
@@ -35,6 +42,33 @@ generation_config = {
 ##############################
 #           Classes          #
 ##############################
+
+#new class for persistent world data
+class World:
+    # updated to store setting and realism as persistent world data
+    def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm."):
+        self.id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+        self.name = name
+        self.setting = setting
+        self.realism = realism
+        self.description = description
+        self.major_events = [] 
+
+    def add_event(self, event_text):
+        self.major_events.append(event_text)
+        if len(self.major_events) > 20: 
+            self.major_events.pop(0)
+    
+    #helper to convert object to dict for json saving
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'setting': self.setting,
+            'realism': self.realism,
+            'description': self.description,
+            'major_events': self.major_events
+        }
 
 #stores information about players, such
 class Player:
@@ -55,8 +89,12 @@ class Player:
         return f"{self.username} [HP:{self.hp}] ({self.status})"
 
 class GameRoom:
-    def __init__(self, room_id):
+    #updated init to include setting, realism, and world binding
+    def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None):
         self.room_id = room_id
+        self.setting = setting
+        self.realism = realism
+        self.world_id = world_id
         self.history = []  #list of strings or dicts
         self.players = {}  #dict: { sid: Player }
 
@@ -95,7 +133,47 @@ class GameRoom:
 #      Helper Functions      #
 ##############################
 
+#load worlds from json file on startup
+def load_worlds():
+    global worlds
+    if not os.path.exists(WORLDS_FILE):
+        return
+    try:
+        with open(WORLDS_FILE, 'r') as f:
+            data = json.load(f)
+            for w_id, w_data in data.items():
+                # defaults added for backward compatibility
+                w = World(
+                    w_data['name'], 
+                    w_data.get('setting', 'Medieval Fantasy'), 
+                    w_data.get('realism', 'High'), 
+                    w_data['description']
+                )
+                w.id = w_data['id'] # overwrite random id
+                w.major_events = w_data['major_events']
+                worlds[w_id] = w
+    except Exception as e:
+        print(f"Error loading worlds: {e}")
+
+#save worlds to json file
+def save_worlds():
+    try:
+        data = {w_id: w.to_dict() for w_id, w in worlds.items()}
+        with open(WORLDS_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving worlds: {e}")
+
 def generate_ai_response(game_room):
+    #fetching world context for prompt
+    world_context = "Unknown World"
+    world_history = "No known history."
+    
+    if game_room.world_id and game_room.world_id in worlds:
+        w = worlds[game_room.world_id]
+        world_context = f"{w.name}: {w.description}"
+        world_history = "\n".join([f"- {e}" for e in w.major_events])
+
     # set up message history to keep storyteller on track
     history_text = ""
     for msg in game_room.history:
@@ -108,8 +186,17 @@ def generate_ai_response(game_room):
     party_stats = game_room.get_party_status_string()
 
     # schema enforcing prompt
+    # updated prompt to include world context, settings, and world updates schema
     prompt = f"""
-    You are a Dungeon Master. 
+    You are GAOL, a Dungeon Master AI. 
+
+    GAME SETTINGS:
+    - Setting: {game_room.setting}
+    - Realism Level: {game_room.realism}
+    - World Context: {world_context}
+    
+    WORLD HISTORY (MAJOR EVENTS):
+    {world_history}
 
     {party_stats}
     
@@ -122,13 +209,15 @@ def generate_ai_response(game_room):
     INSTRUCTIONS:
     1. Narrate the outcome of their actions dramatically (max 3 sentences).
     2. Update player stats if they took damage or used items.
-    3. Return ONLY a JSON object with this exact schema:
+    3. If a MAJOR world-altering event occurs (e.g., a city falls, a god dies), add it to "world_updates".
+    4. Return ONLY a JSON object with this exact schema:
     
     {{
       "story_text": "The narrative description...",
       "updates": {{
          "PlayerName": {{ "hp_change": -10, "status": "Wounded" }}
-      }}
+      }},
+      "world_updates": ["The King of Aethelgard has been assassinated."]
     }}
     
     If no status change for a player, omit them from "updates".
@@ -139,7 +228,7 @@ def generate_ai_response(game_room):
         return json.loads(response.text) # Parse JSON string to Python Dict
     except Exception as e:
         print(f"AI Error: {e}")
-        return {"story_text": "The matrix glitches...", "updates": {}}
+        return {"story_text": "The matrix glitches...", "updates": {}, "world_updates": []}
     
 ##############################
 #         API Routes         #
@@ -154,6 +243,62 @@ def index():
 #       Socket Events        #
 ##############################
 
+#fetches worlds for the frontend dropdown
+@socketio.on('get_worlds')
+def handle_get_worlds():
+    world_list = [{'id': k, 'name': v.name} for k, v in worlds.items()]
+    emit('world_list', world_list)
+
+#handles room creation logic separate from joining
+@socketio.on('create_room')
+def handle_create_room(data):
+    room_id = data['room']
+    username = data['username']
+    
+    # inputs from frontend
+    req_setting = data.get('setting', 'Medieval Fantasy')
+    req_realism = data.get('realism', 'High')
+    world_selection = data.get('world_selection') 
+    new_world_name = data.get('new_world_name')
+
+    if room_id in games:
+        emit('status', {'msg': 'ERROR: Room ID already exists.'})
+        return
+
+    final_world_id = None
+    final_setting = req_setting
+    final_realism = req_realism
+
+    if world_selection == 'NEW':
+        # Create new world with the provided settings
+        w = World(
+            new_world_name if new_world_name else f"World {room_id}",
+            req_setting,
+            req_realism
+        )
+        worlds[w.id] = w
+        final_world_id = w.id
+        save_worlds() 
+    elif world_selection in worlds:
+        # Load existing world and OVERRIDE provided settings
+        final_world_id = world_selection
+        w = worlds[final_world_id]
+        final_setting = w.setting
+        final_realism = w.realism
+    else:
+        #fallback
+        if not worlds:
+            w = World("Gaia", "Medieval Fantasy", "High", "The default world.")
+            worlds[w.id] = w
+            save_worlds() 
+        final_world_id = list(worlds.keys())[0]
+
+    games[room_id] = GameRoom(room_id, final_setting, final_realism, final_world_id)
+    
+    #manually trigger join logic for the creator
+    #using a helper function logic here would be cleaner but keeping inline for now
+    on_join({'username': username, 'room': room_id})
+
 #someone joins a room
 @socketio.on('join')
 def on_join(data):
@@ -163,9 +308,17 @@ def on_join(data):
     join_room(room)
     
     if room not in games:
-        games[room] = GameRoom(room)
+        #added error handling if room doesn't exist (must create first)
+        emit('status', {'msg': 'ERROR: Room does not exist. Create it first.'}, room=sid)
+        return
     
     game = games[room]
+
+    #check for duplicate username
+    if any(p.username == username for p in game.players.values()):
+        emit('status', {'msg': f'ERROR: Name "{username}" is taken.'}, room=sid)
+        return
+    
     if len(game.players) >= 6:
         emit('status', {'msg': 'CONNECTION REJECTED: ROOM FULL (MAX 6)'}, room=sid)
         #FIXME: I don't know if this actually prevents players from joining.
@@ -175,6 +328,9 @@ def on_join(data):
     
     emit('status', {'msg': f'{username} CONNECTED.'}, room=room)
     
+    #signal to frontend that join was successful so it can swap views
+    emit('join_success', {'room': room, 'world': worlds[game.world_id].name}, room=sid)
+
     # Send immediate state update so the new player sees existing cards
     game_state_export = [
         {'name': p.username, 'hp': p.hp, 'status': p.status} 
@@ -232,7 +388,14 @@ def handle_action(data):
         #extract the story text to display on the console, and all the player object updates
         story_text = ai_data.get('story_text', 'The DM remains silent.')
         updates = ai_data.get('updates', {})
+        world_updates = ai_data.get('world_updates', [])
         
+        #process world updates
+        if world_updates and game.world_id in worlds:
+            for event in world_updates:
+                worlds[game.world_id].add_event(event)
+            save_worlds() # save logic if world lore changed
+
         #status changes to players takes effect
         for player_name, changes in updates.items():
             #find the player by name
@@ -261,4 +424,10 @@ def handle_action(data):
         game.reset_turns()
 
 if __name__ == "__main__":
+    load_worlds() # load json on startup
+    #seed a default world
+    if not worlds:
+        default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
+        worlds[default_world.id] = default_world
+        save_worlds()
     socketio.run(app, debug=True, port=5000)

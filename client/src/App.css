@@ -23,30 +23,95 @@ body {
 
 /* login screen */
 .login-container {
+  /* fixed position ensures it covers the screen regardless of parent flex rules */
+  position: fixed; 
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 100;
+  
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  height: 100vh;
   background: radial-gradient(circle, #111 0%, #000 100%);
   color: var(--accent-gold);
 }
 
 .login-container h1 {
-  font-size: 2.5rem;
-  letter-spacing: -2px;
-  border-bottom: 4px solid var(--accent-gold);
-  margin-bottom: 40px;
+  /* updated title styling */
+  font-size: 4rem;
+  letter-spacing: 10px;
+  border-bottom: none; /* removed underline */
+  margin-bottom: 30px;
+  text-transform: uppercase;
+  font-weight: 700;
+  text-shadow: 0 0 10px var(--accent-dim);
 }
 
 .login-box {
   display: flex;
   flex-direction: column;
-  gap: 15px;
-  width: 300px;
+  gap: 20px;
+  width: 500px;
+  background: var(--panel-bg);
+  border: 2px solid var(--accent-dim);
+  padding: 40px;
 }
 
-.login-box input {
+/* Toggle Bar for Join/Create */
+.toggle-bar {
+  display: flex;
+  width: 100%;
+  gap: 0;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--accent-dim);
+}
+
+.toggle-btn {
+  flex: 1;
+  padding: 15px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-family: inherit;
+  font-weight: bold;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.2s;
+  border-radius: 0;
+}
+
+.toggle-btn:hover { color: #fff; }
+
+.toggle-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent-gold);
+  border-bottom: 2px solid var(--accent-gold);
+}
+
+/* new container for side-by-side label and input */
+.form-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.login-label {
+  flex: 1;
+  color: var(--text-main);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-align: right;
+  margin-right: 20px;
+}
+
+/* applies to both inputs and dropdowns now */
+.login-box input, .login-box select {
+  flex: 2; /* inputs take up twice the space of labels */
   padding: 15px;
   background: #000;
   border: 1px solid var(--accent-dim);
@@ -54,19 +119,33 @@ body {
   font-family: inherit;
   font-size: 1rem;
   text-align: center;
+  outline: none;
 }
 
-.login-box button {
+.login-box select {
+  text-align-last: center; /* centers text in dropdowns */
+  cursor: pointer;
+}
+
+/* general button styling for rounded corner removal */
+button {
+  border-radius: 0;
+}
+
+.action-btn {
   padding: 15px;
   background: var(--accent-gold);
   color: #000;
   font-weight: bold;
   font-size: 1.1rem;
   border: none;
+  border-radius: 0; 
   cursor: pointer;
   text-transform: uppercase;
+  margin-top: 20px; /* added spacing from inputs */
+  width: 100%; 
 }
-.login-box button:hover { background: #ffdb60; }
+.action-btn:hover { background: #ffdb60; }
 
 /* primary layout*/
 .main-layout {
@@ -83,6 +162,8 @@ body {
   flex-direction: column;
   background-color: #080808;
   border-right: 2px solid var(--accent-dim);
+  overflow: hidden;
+  height: 100%;
 }
 
 .status-ticker {
@@ -102,6 +183,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 15px;
+  min-height: 0;
 }
 
 /* custom scrollbar for the chat logs */
@@ -131,6 +213,11 @@ body {
 .gaol-msg { border-left-color: var(--accent-gold); }
 .gaol-msg .msg-header { color: var(--accent-gold); font-weight: bold; }
 .gaol-msg .msg-body { color: var(--accent-gold); font-style: italic; }
+
+.msg-body {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
 
 .input-area {
   background-color: #000;
