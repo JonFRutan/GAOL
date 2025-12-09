@@ -174,6 +174,20 @@ button {
   font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 1px;
+  transition: all 0.3s;
+}
+
+/* pulsing effect when AI is thinking */
+.status-ticker.thinking {
+    background-color: var(--terminal-green);
+    color: #000;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
 }
 
 .chat-window {
@@ -184,12 +198,57 @@ button {
   flex-direction: column;
   gap: 15px;
   min-height: 0;
+  position: relative; /* for embark overlay */
 }
 
 /* custom scrollbar for the chat logs */
 .chat-window::-webkit-scrollbar { width: 8px; }
 .chat-window::-webkit-scrollbar-track { background: #000; }
 .chat-window::-webkit-scrollbar-thumb { background: var(--accent-dim); }
+
+/* Embark Button Styling */
+.embark-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: rgba(0,0,0,0.5);
+    z-index: 10;
+}
+
+.embark-btn {
+    padding: 20px 40px;
+    background: var(--terminal-green);
+    color: #000;
+    font-size: 1.5rem;
+    font-weight: bold;
+    border: 2px solid var(--terminal-green);
+    cursor: pointer;
+    text-transform: uppercase;
+    box-shadow: 0 0 20px rgba(0,255,65, 0.3);
+    transition: all 0.2s;
+}
+
+.embark-btn:hover {
+    background: #000;
+    color: var(--terminal-green);
+    box-shadow: 0 0 30px rgba(0,255,65, 0.6);
+}
+
+/* Ready Button in Detail View */
+.ready-btn {
+    background: var(--accent-gold);
+    border: none;
+    font-weight: bold;
+    font-size: 0.7rem;
+    cursor: pointer;
+    padding: 2px 8px;
+}
+.ready-btn:hover {
+    background: #fff;
+}
 
 .message-block {
   padding-left: 10px;
@@ -267,6 +326,7 @@ button {
   align-items: center;
   text-align: center;
   transition: all 0.2s;
+  position: relative;
 }
 
 .mini-name { 
@@ -277,6 +337,18 @@ button {
 }
 
 .mini-stat { font-size: 0.8rem; color: #777; }
+
+/* Ready Indicator */
+.ready-indicator {
+    position: absolute;
+    bottom: 5px;
+    background: var(--terminal-green);
+    color: #000;
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    font-weight: bold;
+    border-radius: 2px;
+}
 
 /* Empty Slots */
 .mini-card.empty {
@@ -295,8 +367,47 @@ button {
   color: var(--accent-gold);
 }
 
+/* Tab Bar Styling */
+.tab-bar {
+    display: flex;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #333;
+}
+
+.tab-btn {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #555;
+    font-weight: bold;
+    padding: 10px;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.tab-btn:hover {
+    color: #888;
+}
+
+.tab-btn.active {
+    color: var(--accent-gold);
+    border-bottom: 2px solid var(--accent-gold);
+    background: linear-gradient(0deg, rgba(255, 193, 7, 0.1) 0%, transparent 100%);
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 20px;
+}
+
+.detail-header {
+    flex: 1;
+}
+
 .detail-view h2 {
-  margin: 0 0 15px 0;
+  margin: 0 0 10px 0;
   font-size: 1.5rem;
   border-bottom: 1px solid var(--accent-dim);
   padding-bottom: 5px;
@@ -304,14 +415,12 @@ button {
 }
 
 .detail-stats {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 15px;
   font-size: 1.1rem;
 }
 
-.portrait-placeholder {
-  flex-grow: 1;
+.portrait-small {
+  width: 80px;
+  height: 80px;
   border: 1px solid var(--accent-dim);
   background: #000;
   display: flex;
@@ -320,4 +429,94 @@ button {
   color: #444;
   font-size: 0.9rem;
   letter-spacing: 2px;
+  margin-left: 20px;
+}
+
+.description-box {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+.description-box label {
+    font-size: 0.8rem;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.description-box textarea {
+    flex-grow: 1;
+    background: #000;
+    border: 1px solid #333;
+    color: var(--text-main);
+    font-family: inherit;
+    padding: 10px;
+    resize: none;
+    outline: none;
+}
+.description-box textarea:disabled {
+    color: var(--accent-gold); /* Highlight that it is locked */
+    border-color: var(--accent-dim);
+    opacity: 0.7;
+}
+
+.description-box textarea:focus {
+    border-color: var(--accent-dim);
+}
+
+/* World Sheet Styles */
+.world-sheet {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.world-header {
+    margin-bottom: 15px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 10px;
+}
+
+.world-header h2 {
+    font-size: 1.4rem;
+    color: var(--accent-gold);
+    margin: 0 0 5px 0;
+    border: none;
+}
+
+.world-meta {
+    font-size: 0.8rem;
+    color: #666;
+    text-transform: uppercase;
+}
+
+.world-desc {
+    font-style: italic;
+    color: #ccc;
+    margin-bottom: 20px;
+    line-height: 1.4;
+}
+
+.world-events-title {
+    font-size: 0.9rem;
+    color: var(--terminal-green);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    font-weight: bold;
+}
+
+.world-events-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    color: #aaa;
+    border-top: 1px solid #333;
+    padding-top: 10px;
+}
+
+.world-events-list::-webkit-scrollbar { width: 5px; }
+.world-events-list::-webkit-scrollbar-thumb { background: #333; }
+
+.event-item {
+    margin-bottom: 8px;
 }

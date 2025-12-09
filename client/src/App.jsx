@@ -13,6 +13,12 @@ function App() {
   const [room, setRoom] = useState('');
   //world tracking
   const [currentWorldName, setCurrentWorldName] = useState('');
+  const [worldData, setWorldData] = useState(null); // stores detailed world info
+  
+  // Game Flow State
+  const [isAdmin, setIsAdmin] = useState(false); // Only true for the room creator
+  const [isReady, setIsReady] = useState(false); // Local ready state for Lobby
+  const [userDescription, setUserDescription] = useState(''); // Text area content
 
   //creation parameters
   const [setting, setSetting] = useState('Medieval Fantasy');
@@ -26,6 +32,9 @@ function App() {
   const [inputValue, setInputValue] = useState('');
   const [statusMsg, setStatusMsg] = useState('System Ready...');
   
+  //UI state
+  const [activeTab, setActiveTab] = useState('character'); // 'character' or 'world'
+
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -45,7 +54,6 @@ function App() {
     //populate world dropdown
     socket.on('world_list', (data) => {
         setAvailableWorlds(data);
-        // Fix: Explicitly handle empty list vs existing list to prevent empty string state
         if(data.length > 0) {
             setSelectedWorld(data[0].id);
         } else {
@@ -57,7 +65,14 @@ function App() {
     socket.on('join_success', (data) => {
       setRoom(data.room);
       setCurrentWorldName(data.world);
+      setWorldData(data.world_details); //store full world details
+      setIsAdmin(data.is_admin); // Set admin privileges
       setGameState('playing');
+    });
+
+    //listen for dynamic world updates (lore added during game)
+    socket.on('world_update', (data) => {
+        setWorldData(data);
     });
 
     //fetch worlds on mount
@@ -69,12 +84,25 @@ function App() {
       socket.off('game_state_update'); 
       socket.off('world_list');
       socket.off('join_success');
+      socket.off('world_update');
     };
   }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Derived state for the current user's stats
+  const myStats = partyStats.find(p => p.name === username) || { 
+    name: username, hp: 100, status: 'Alive', description: ''
+  };
+
+  // Sync logic: If the user is locked (ready), update their text box if the Server (AI) changes it.
+  useEffect(() => {
+      if(isReady && myStats.description) {
+          setUserDescription(myStats.description);
+      }
+  }, [myStats.description, isReady]);
 
   //join existing room
   const handleJoin = () => {
@@ -86,7 +114,6 @@ function App() {
   //create new room logic
   const handleCreate = () => {
     if (username && room) {
-      // Safety: Ensure selectedWorld is set. If empty (unlikely with fix above), default to NEW
       const finalWorldSelection = selectedWorld || 'NEW';
       
       socket.emit('create_room', {
@@ -100,6 +127,19 @@ function App() {
     }
   };
 
+  const handleEmbark = () => {
+    socket.emit('embark', { room });
+  };
+
+  const handleReady = () => {
+      if(!userDescription.trim()) {
+          setStatusMsg("Please write a description first.");
+          return;
+      }
+      setIsReady(true);
+      socket.emit('player_ready', { room, description: userDescription });
+  };
+
   const sendAction = () => {
     if (inputValue.trim()) {
       socket.emit('player_action', { username, room, message: inputValue });
@@ -107,9 +147,8 @@ function App() {
     }
   };
 
-  const myStats = partyStats.find(p => p.name === username) || { 
-    name: username, hp: 100, status: 'Alive' 
-  };
+  // Determine if Embark button is clickable
+  const allPlayersReady = partyStats.length > 0 && partyStats.every(p => p.is_ready);
 
   if (gameState === 'login') {
     return (
@@ -118,7 +157,6 @@ function App() {
         
         <div className="login-box">
           
-          {/* Toggle buttons moved inside the box */}
           <div className="toggle-bar">
              <button 
                className={`toggle-btn ${loginMode === 'join' ? 'active' : ''}`}
@@ -134,7 +172,6 @@ function App() {
              </button>
           </div>
 
-          {/* standard inputs with side labels */}
           <div className="form-row">
             <label className="login-label">Username</label>
             <input placeholder="e.g. Shadowhawk30" onChange={e => setUsername(e.target.value)} />
@@ -145,7 +182,6 @@ function App() {
             <input placeholder="e.g. 1987" onChange={e => setRoom(e.target.value)} />
           </div>
 
-          {/* extended options for create mode */}
           {loginMode === 'create' && (
             <>
               <div className="form-row">
@@ -161,7 +197,6 @@ function App() {
                 </select>
               </div>
 
-              {/* setting and realism removed unless NEW world selected */}
               {selectedWorld === 'NEW' && (
                  <>
                    <div className="form-row">
@@ -213,13 +248,36 @@ function App() {
       {/* Left side, submission box, chat log, and ticker */}
       <div className="left-panel">
         
-        {/* Top Ticker */}
-        <div className="status-ticker">
+        {/* Top Ticker - added check for thinking status */}
+        <div className={`status-ticker ${statusMsg.includes('THINKING') ? 'thinking' : ''}`}>
            STATUS: {statusMsg} | WORLD: {currentWorldName}
         </div>
 
         {/* Chat Log */}
         <div className="chat-window">
+            {/* Embark button appears only for Admin, before messages exist (game start) */}
+            {messages.length === 0 && isAdmin && (
+                <div className="embark-overlay">
+                    <button 
+                        className="embark-btn" 
+                        onClick={handleEmbark}
+                        disabled={!allPlayersReady}
+                        style={{ opacity: allPlayersReady ? 1 : 0.5, cursor: allPlayersReady ? 'pointer' : 'not-allowed' }}
+                    >
+                        {allPlayersReady ? "EMBARK" : "WAITING FOR PLAYERS..."}
+                    </button>
+                </div>
+            )}
+            
+            {/* If not admin and waiting, show message */}
+            {messages.length === 0 && !isAdmin && (
+                <div className="embark-overlay">
+                    <div style={{color:'#666', fontStyle:'italic'}}>
+                        Waiting for host to start...
+                    </div>
+                </div>
+            )}
+
           {messages.map((m, i) => (
             <div key={i} className={`message-block ${m.sender === 'Gaol' ? 'gaol-msg' : 'player-msg'}`}>
               <div className="msg-header">
@@ -242,6 +300,7 @@ function App() {
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendAction()}
             placeholder="Describe your action..."
+            disabled={messages.length === 0} // Disable chat until game starts
           />
         </div>
       </div>
@@ -256,6 +315,11 @@ function App() {
               <div className="mini-name">#{i+1} {p.name}</div>
               <div className="mini-stat">HP: {p.hp}</div>
               <div className="mini-stat">{p.status}</div>
+              {/* Show Ready if they have Acted (Turn) or are Ready (Lobby) */}
+              {/* Only show Lobby Ready if NO messages (game hasn't started) */}
+              {((messages.length === 0 && p.is_ready) || (messages.length > 0 && p.has_acted)) && (
+                  <div className="ready-indicator">READY</div>
+              )}
             </div>
           ))}
           {[...Array(Math.max(0, 6 - partyStats.length))].map((_, i) => (
@@ -265,16 +329,92 @@ function App() {
           ))}
         </div>
 
-        {/* Character Sheet */}
+        {/* Detail View with Tabs */}
         <div className="detail-view">
-          <h2>{myStats.name}</h2>
-          <div className="detail-stats">
-            <div>Health: {myStats.hp} / 100</div>
-            <div>Status: {myStats.status}</div>
+          
+          <div className="tab-bar">
+             <button 
+               className={`tab-btn ${activeTab === 'character' ? 'active' : ''}`}
+               onClick={() => setActiveTab('character')}
+             >
+               CHARACTER
+             </button>
+             <button 
+               className={`tab-btn ${activeTab === 'world' ? 'active' : ''}`}
+               onClick={() => setActiveTab('world')}
+             >
+               WORLD
+             </button>
           </div>
-          <div className="portrait-placeholder">
-             {setting} / {realism}
-          </div>
+
+          {activeTab === 'character' ? (
+              // CHARACTER SHEET
+              <>
+                <div className="detail-row">
+                    <div className="detail-header">
+                        <h2>{myStats.name}</h2>
+                        <div className="detail-stats">
+                            <div>Health: {myStats.hp} / 100</div>
+                            <div>Status: {myStats.status}</div>
+                        </div>
+                    </div>
+                    <div className="portrait-small">
+                        {setting ? setting[0] : '?'}{realism ? realism[0] : '?'}
+                    </div>
+                </div>
+                
+                <div className="description-box">
+                    <div style={{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}>
+                        <label>DESCRIPTION</label>
+                        {!isReady && (
+                            <button className="ready-btn" onClick={handleReady}>
+                                CONFIRM & READY
+                            </button>
+                        )}
+                        {isReady && <span style={{color:'var(--terminal-green)', fontSize:'0.7rem'}}>LOCKED</span>}
+                    </div>
+                    
+                    <textarea 
+                        placeholder="Write character description..." 
+                        value={userDescription}
+                        onChange={e => setUserDescription(e.target.value)}
+                        disabled={isReady} // Lock the input if ready
+                    />
+                </div>
+              </>
+          ) : (
+              // WORLD SHEET
+              <div className="world-sheet">
+                 {worldData ? (
+                     <>
+                        <div className="world-header">
+                            <h2>{worldData.name}</h2>
+                            <div className="world-meta">
+                                <span>{worldData.setting}</span> | <span>{worldData.realism} Realism</span>
+                            </div>
+                        </div>
+                        <div className="world-desc">
+                            {worldData.description}
+                        </div>
+                        <div className="world-events-title">MAJOR EVENTS</div>
+                        <div className="world-events-list">
+                            {worldData.major_events && worldData.major_events.length > 0 ? (
+                                worldData.major_events.map((e, i) => (
+                                    <div key={i} className="event-item">
+                                        - {e}
+                                    </div>
+                                ))
+                            ) : (
+                                <div style={{color:'#555'}}>No major history yet.</div>
+                            )}
+                        </div>
+                     </>
+                 ) : (
+                     <div>Loading world data...</div>
+                 )}
+              </div>
+          )}
+
         </div>
 
       </div>
