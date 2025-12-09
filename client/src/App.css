@@ -444,6 +444,14 @@ button {
     margin-bottom: 5px;
 }
 
+/* Instruction text styling */
+.input-instruction {
+    font-size: 0.7rem;
+    color: #444;
+    font-style: italic;
+    margin-bottom: 5px;
+}
+
 .description-box textarea {
     flex-grow: 1;
     background: #000;

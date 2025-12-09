@@ -251,7 +251,70 @@ def generate_ai_response(game_room, is_embark=False):
     except Exception as e:
         print(f"AI Error: {e}")
         return {"story_text": "The matrix glitches...", "updates": {}, "world_updates": []}
+
+#extracted turn processing so it can be triggered by disconnects or actions
+def process_turn(room_id):
+    if room_id not in games: return
+    game = games[room_id]
     
+    #we compile all the player actions and their summaries to send in one block to the AI prompt
+    turn_summary = game.compile_turn_actions()
+    game.history.append({'sender': 'Party', 'text': turn_summary, 'type': 'story'})
+    emit('message', {'sender': 'Party', 'text': turn_summary}, room=room_id)
+    
+    #generate the AI response in the form of a JSON file
+    emit('status', {'msg': 'GAOL IS THINKING...'}, room=room_id)
+    
+    #small sleep to allow the frontend to update the status ticker before blocking
+    socketio.sleep(0.1)
+    
+    ai_data = generate_ai_response(game)
+    
+    #extract the story text to display on the console, and all the player object updates
+    story_text = ai_data.get('story_text', 'The DM remains silent.')
+    updates = ai_data.get('updates', {})
+    world_updates = ai_data.get('world_updates', [])
+    
+    #process world updates
+    if world_updates and game.world_id in worlds:
+        for event in world_updates:
+            worlds[game.world_id].add_event(event)
+        save_worlds() # save logic if world lore changed
+        #push world update to clients immediately
+        emit('world_update', worlds[game.world_id].to_dict(), room=room_id)
+
+    #status changes to players takes effect
+    for player_name, changes in updates.items():
+        #find the player by name
+        target_player = next((p for p in game.players.values() if p.username == player_name), None)
+        if target_player:
+            if 'hp_change' in changes:
+                target_player.hp += int(changes['hp_change'])
+                #Current HP is 0-100. 
+                target_player.hp = max(0, min(100, target_player.hp))
+            if 'status' in changes:
+                target_player.status = changes['status']
+            if 'description' in changes:
+                target_player.description = changes['description']
+
+    #display the current narrative to the room
+    game.history.append({'sender': 'Gaol', 'text': story_text, 'type': 'story'})
+    emit('message', {'sender': 'Gaol', 'text': story_text}, room=room_id)
+    
+    #reset everyones turns
+    game.reset_turns()
+    
+    # Status back to waiting for move
+    emit('status', {'msg': 'GAOL awaits your move...'}, room=room_id)
+    
+    #display the status updates for each player, and update the frontend character sheets to reflect this.
+    # updated to include has_acted check (which will be false now)
+    game_state_export = [
+        {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
+        for p in game.players.values()
+    ]
+    emit('game_state_update', game_state_export, room=room_id)
+
 ##############################
 #         API Routes         #
 ##############################
@@ -352,15 +415,25 @@ def on_join(data):
         is_admin = True
 
     game.add_player(sid, username)
+
+    #late joiner logic
+    if game.is_started:
+        p = game.players[sid]
+        p.has_acted = True
+        p.current_action = "Joins the party."
+        p.is_ready = True # ensure they don't block checks
+        emit('status', {'msg': 'Game in progress. You will join next turn.'}, room=sid)
     
     emit('status', {'msg': f'{username} CONNECTED.'}, room=room)
     
     #signal to frontend that join was successful so it can swap views
+    #sending history ensures late joiners don't see the 'waiting for host' screen
     emit('join_success', {
         'room': room, 
         'world': current_world.name,
         'world_details': current_world.to_dict(), #send full world details
-        'is_admin': is_admin # pass admin flag to frontend
+        'is_admin': is_admin, # pass admin flag to frontend
+        'history': game.history if game.is_started else []
     }, room=sid)
 
     # Send immediate state update so the new player sees existing cards
@@ -380,6 +453,17 @@ def on_disconnect():
             name = game.players[sid].username
             game.remove_player(sid)
             emit('status', {'msg': f'{name} disconnected.'}, room=room_id)
+            
+            #push new state immediately to prevent ghost cards
+            game_state_export = [
+                {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
+                for p in game.players.values()
+            ]
+            emit('game_state_update', game_state_export, room=room_id)
+
+            #check if the game was waiting on this person
+            if game.is_started and len(game.players) > 0 and game.all_players_acted():
+                process_turn(room_id)
 
 #handling player ready status in lobby
 @socketio.on('player_ready')
@@ -479,60 +563,7 @@ def handle_action(data):
         pending_count = len(game.players) - sum(p.has_acted for p in game.players.values())
         emit('status', {'msg': f'Waiting for {pending_count} player(s)...'}, room=room)
     else:
-        #everyone is ready
-        #we compile all the player actions and their summaries to send in one block to the AI prompt
-        turn_summary = game.compile_turn_actions()
-        game.history.append({'sender': 'Party', 'text': turn_summary, 'type': 'story'})
-        emit('message', {'sender': 'Party', 'text': turn_summary}, room=room)
-        #generate the AI response in the form of a JSON file
-        emit('status', {'msg': 'GAOL IS THINKING...'}, room=room)
-        
-        ai_data = generate_ai_response(game)
-        
-        #extract the story text to display on the console, and all the player object updates
-        story_text = ai_data.get('story_text', 'The DM remains silent.')
-        updates = ai_data.get('updates', {})
-        world_updates = ai_data.get('world_updates', [])
-        
-        #process world updates
-        if world_updates and game.world_id in worlds:
-            for event in world_updates:
-                worlds[game.world_id].add_event(event)
-            save_worlds() # save logic if world lore changed
-            #push world update to clients immediately
-            emit('world_update', worlds[game.world_id].to_dict(), room=room)
-
-        #status changes to players takes effect
-        for player_name, changes in updates.items():
-            #find the player by name
-            target_player = next((p for p in game.players.values() if p.username == player_name), None)
-            if target_player:
-                if 'hp_change' in changes:
-                    target_player.hp += int(changes['hp_change'])
-                    #Current HP is 0-100. 
-                    target_player.hp = max(0, min(100, target_player.hp))
-                if 'status' in changes:
-                    target_player.status = changes['status']
-                if 'description' in changes:
-                    target_player.description = changes['description']
-
-        #display the current narrative to the room
-        game.history.append({'sender': 'Gaol', 'text': story_text, 'type': 'story'})
-        emit('message', {'sender': 'Gaol', 'text': story_text}, room=room)
-        
-        #reset everyones turns
-        game.reset_turns()
-        
-        # Status back to waiting for move
-        emit('status', {'msg': 'GAOL awaits your move...'}, room=room)
-        
-        #display the status updates for each player, and update the frontend character sheets to reflect this.
-        # updated to include has_acted check (which will be false now)
-        game_state_export = [
-            {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
-            for p in game.players.values()
-        ]
-        emit('game_state_update', game_state_export, room=room)
+        process_turn(room)
 
 if __name__ == "__main__":
     load_worlds() # load json on startup

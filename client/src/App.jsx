@@ -67,6 +67,12 @@ function App() {
       setCurrentWorldName(data.world);
       setWorldData(data.world_details); //store full world details
       setIsAdmin(data.is_admin); // Set admin privileges
+      
+      //load existing history for late joiners
+      if(data.history && data.history.length > 0) {
+          setMessages(data.history);
+      }
+      
       setGameState('playing');
     });
 
@@ -132,10 +138,20 @@ function App() {
   };
 
   const handleReady = () => {
-      if(!userDescription.trim()) {
-          setStatusMsg("Please write a description first.");
+      //split by comma and filter empty entries
+      const tags = userDescription.split(',').filter(t => t.trim().length > 0);
+
+      if(tags.length === 0) {
+          setStatusMsg("Define your character traits.");
           return;
       }
+      
+      //validate tag limit
+      if(tags.length > 5) {
+          setStatusMsg("Too many traits (Max 5).");
+          return;
+      }
+
       setIsReady(true);
       socket.emit('player_ready', { room, description: userDescription });
   };
@@ -364,8 +380,11 @@ function App() {
                 </div>
                 
                 <div className="description-box">
-                    <div style={{display:'flex', justifyContent:'space-between', marginBottom:'5px'}}>
-                        <label>DESCRIPTION</label>
+                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}>
+                        <div style={{display:'flex', flexDirection:'column'}}>
+                            <label>CHARACTER TAGS</label>
+                            <span className="input-instruction">Separate with commas (Max 5)</span>
+                        </div>
                         {!isReady && (
                             <button className="ready-btn" onClick={handleReady}>
                                 CONFIRM & READY
@@ -375,7 +394,7 @@ function App() {
                     </div>
                     
                     <textarea 
-                        placeholder="Write character description..." 
+                        placeholder="e.g. Human, Warrior, Strong, Brave, Noble" 
                         value={userDescription}
                         onChange={e => setUserDescription(e.target.value)}
                         disabled={isReady} // Lock the input if ready
