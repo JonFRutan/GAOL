@@ -1,5 +1,5 @@
 #jfr
-import os, json, random, string
+import os, json, random, string, time
 import google.generativeai as genai
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
@@ -82,7 +82,10 @@ class Player:
         self.has_acted = False
         
         # New attributes for lobby/description logic
-        self.description = ""
+        self.description = "" # Restored description field
+        self.tags = []
+        self.ambition = "Unknown"
+        self.secret = ""
         self.is_ready = False # Used for the lobby phase
 
     def reset_turn(self):
@@ -138,9 +141,14 @@ class GameRoom:
     def get_party_status_string(self):
         status_lines = ["CURRENT PARTY STATUS:"]
         for p in self.players.values():
-            # Included description in the status block so the AI knows who they are
-            desc = f" (Desc: {p.description})" if p.description else ""
-            status_lines.append(f" * {p.username}: {p.status} (HP: {p.hp}/100){desc}")
+            # Formatted to include tags, ambition, and secret for the AI
+            tags_str = ", ".join(p.tags) if p.tags else "None"
+            desc_str = f" (Summary: {p.description})" if p.description else ""
+            status_lines.append(f" * {p.username}: {p.status} (HP: {p.hp}/100){desc_str}")
+            status_lines.append(f"   - Tags: {tags_str}")
+            status_lines.append(f"   - Ambition: {p.ambition}")
+            if p.secret:
+                status_lines.append(f"   - SECRET (Only known to you and player): {p.secret}")
         return "\n".join(status_lines)
 
 ##############################
@@ -201,7 +209,7 @@ def generate_ai_response(game_room, is_embark=False):
 
     special_instructions = ""
     if is_embark:
-        special_instructions = "THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). Use the player descriptions to flavor the intro."
+        special_instructions = "THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). Use the player Tags and Secrets to flavor the intro."
         current_actions = "The party is ready to begin."
 
     # schema enforcing prompt
@@ -230,14 +238,15 @@ def generate_ai_response(game_room, is_embark=False):
     INSTRUCTIONS:
     1. Narrate the outcome of their actions dramatically (max 3 sentences).
     2. Update player stats if they took damage or used items.
-    3. You can update a player's description (e.g., if they get scarred, change clothes, or mutate).
-    4. If a MAJOR world-altering event occurs (e.g., a city falls, a god dies), add it to "world_updates".
-    5. Return ONLY a JSON object with this exact schema:
+    3. You can update a player's Tags (e.g., if they mutate) or Ambition (if it changes).
+    4. You can update a player's Description (e.g. if they are scarred or change appearance).
+    5. If a MAJOR world-altering event occurs (e.g., a city falls, a god dies), add it to "world_updates".
+    6. Return ONLY a JSON object with this exact schema:
     
     {{
       "story_text": "The narrative description...",
       "updates": {{
-         "PlayerName": {{ "hp_change": -10, "status": "Wounded", "description": "Covered in slime" }}
+         "PlayerName": {{ "hp_change": -10, "status": "Wounded", "tags_update": ["Undead", "Broken"], "description": "New appearance description" }}
       }},
       "world_updates": ["The King of Aethelgard has been assassinated."]
     }}
@@ -294,6 +303,10 @@ def process_turn(room_id):
                 target_player.hp = max(0, min(100, target_player.hp))
             if 'status' in changes:
                 target_player.status = changes['status']
+            if 'tags_update' in changes:
+                target_player.tags = changes['tags_update']
+            if 'ambition_update' in changes:
+                target_player.ambition = changes['ambition_update']
             if 'description' in changes:
                 target_player.description = changes['description']
 
@@ -310,7 +323,17 @@ def process_turn(room_id):
     #display the status updates for each player, and update the frontend character sheets to reflect this.
     # updated to include has_acted check (which will be false now)
     game_state_export = [
-        {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
+        {
+            'name': p.username, 
+            'hp': p.hp, 
+            'status': p.status, 
+            'has_acted': p.has_acted, 
+            'is_ready': p.is_ready, 
+            'tags': p.tags,
+            'ambition': p.ambition,
+            'secret': p.secret,
+            'description': p.description
+        } 
         for p in game.players.values()
     ]
     emit('game_state_update', game_state_export, room=room_id)
@@ -439,7 +462,17 @@ def on_join(data):
     # Send immediate state update so the new player sees existing cards
     # Added has_acted to export
     game_state_export = [
-        {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
+        {
+            'name': p.username, 
+            'hp': p.hp, 
+            'status': p.status, 
+            'has_acted': p.has_acted, 
+            'is_ready': p.is_ready, 
+            'tags': p.tags,
+            'ambition': p.ambition,
+            'secret': p.secret,
+            'description': p.description
+        } 
         for p in game.players.values()
     ]
     emit('game_state_update', game_state_export, room=room)
@@ -456,7 +489,17 @@ def on_disconnect():
             
             #push new state immediately to prevent ghost cards
             game_state_export = [
-                {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
+                {
+                    'name': p.username, 
+                    'hp': p.hp, 
+                    'status': p.status, 
+                    'has_acted': p.has_acted, 
+                    'is_ready': p.is_ready, 
+                    'tags': p.tags,
+                    'ambition': p.ambition,
+                    'secret': p.secret,
+                    'description': p.description
+                } 
                 for p in game.players.values()
             ]
             emit('game_state_update', game_state_export, room=room_id)
@@ -469,8 +512,13 @@ def on_disconnect():
 @socketio.on('player_ready')
 def handle_player_ready(data):
     room = data['room']
-    description = data['description']
     sid = request.sid
+    
+    # inputs
+    description = data.get('description', '')
+    tags = data.get('tags', [])
+    ambition = data.get('ambition', 'Unknown')
+    secret = data.get('secret', '')
     
     if room not in games: return
     game = games[room]
@@ -478,11 +526,24 @@ def handle_player_ready(data):
     
     if player:
         player.description = description
+        player.tags = tags
+        player.ambition = ambition
+        player.secret = secret
         player.is_ready = True
         
         #emit updated state
         game_state_export = [
-            {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
+            {
+                'name': p.username, 
+                'hp': p.hp, 
+                'status': p.status, 
+                'has_acted': p.has_acted, 
+                'is_ready': p.is_ready, 
+                'tags': p.tags,
+                'ambition': p.ambition,
+                'secret': p.secret,
+                'description': p.description
+            } 
             for p in game.players.values()
         ]
         emit('game_state_update', game_state_export, room=room)
@@ -524,7 +585,17 @@ def handle_embark(data):
     
     # Update frontend to clear ready flags
     game_state_export = [
-        {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
+        {
+            'name': p.username, 
+            'hp': p.hp, 
+            'status': p.status, 
+            'has_acted': p.has_acted, 
+            'is_ready': p.is_ready, 
+            'tags': p.tags,
+            'ambition': p.ambition,
+            'secret': p.secret,
+            'description': p.description
+        } 
         for p in game.players.values()
     ]
     emit('game_state_update', game_state_export, room=room)
@@ -552,7 +623,17 @@ def handle_action(data):
     
     # Update game state immediately to show ready status
     game_state_export = [
-        {'name': p.username, 'hp': p.hp, 'status': p.status, 'has_acted': p.has_acted, 'is_ready': p.is_ready, 'description': p.description} 
+        {
+            'name': p.username, 
+            'hp': p.hp, 
+            'status': p.status, 
+            'has_acted': p.has_acted, 
+            'is_ready': p.is_ready, 
+            'tags': p.tags,
+            'ambition': p.ambition,
+            'secret': p.secret,
+            'description': p.description
+        } 
         for p in game.players.values()
     ]
     emit('game_state_update', game_state_export, room=room)

@@ -18,7 +18,12 @@ function App() {
   // Game Flow State
   const [isAdmin, setIsAdmin] = useState(false); // Only true for the room creator
   const [isReady, setIsReady] = useState(false); // Local ready state for Lobby
-  const [userDescription, setUserDescription] = useState(''); // Text area content
+  
+  // Character Sheet State
+  const [userDescription, setUserDescription] = useState(''); // Visual/Narrative description
+  const [tagsInput, setTagsInput] = useState('');
+  const [ambitionInput, setAmbitionInput] = useState('Unknown');
+  const [secretInput, setSecretInput] = useState('');
 
   //creation parameters
   const [setting, setSetting] = useState('Medieval Fantasy');
@@ -100,15 +105,17 @@ function App() {
 
   // Derived state for the current user's stats
   const myStats = partyStats.find(p => p.name === username) || { 
-    name: username, hp: 100, status: 'Alive', description: ''
+    name: username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: ''
   };
 
   // Sync logic: If the user is locked (ready), update their text box if the Server (AI) changes it.
   useEffect(() => {
-      if(isReady && myStats.description) {
-          setUserDescription(myStats.description);
+      if(isReady) {
+          if(myStats.description) setUserDescription(myStats.description);
+          if(myStats.tags) setTagsInput(myStats.tags.join(', '));
+          if(myStats.ambition) setAmbitionInput(myStats.ambition);
       }
-  }, [myStats.description, isReady]);
+  }, [myStats.description, myStats.tags, myStats.ambition, isReady]);
 
   //join existing room
   const handleJoin = () => {
@@ -139,21 +146,29 @@ function App() {
 
   const handleReady = () => {
       //split by comma and filter empty entries
-      const tags = userDescription.split(',').filter(t => t.trim().length > 0);
+      const tags = tagsInput.split(',').filter(t => t.trim().length > 0);
 
       if(tags.length === 0) {
-          setStatusMsg("Define your character traits.");
+          setStatusMsg("Define your character tags.");
           return;
       }
-      
-      //validate tag limit
       if(tags.length > 5) {
-          setStatusMsg("Too many traits (Max 5).");
+          setStatusMsg("Too many tags (Max 5).");
+          return;
+      }
+      if(!ambitionInput.trim()) {
+          setStatusMsg("Define your ambition.");
           return;
       }
 
       setIsReady(true);
-      socket.emit('player_ready', { room, description: userDescription });
+      socket.emit('player_ready', { 
+          room, 
+          description: userDescription, // send the visual description
+          tags: tags,
+          ambition: ambitionInput,
+          secret: secretInput
+      });
   };
 
   const sendAction = () => {
@@ -289,7 +304,7 @@ function App() {
             {messages.length === 0 && !isAdmin && (
                 <div className="embark-overlay">
                     <div style={{color:'#666', fontStyle:'italic'}}>
-                        Waiting for host to start...
+                        {isReady ? "Waiting for host to start..." : "Fill out character sheet..."}
                     </div>
                 </div>
             )}
@@ -353,13 +368,13 @@ function App() {
                className={`tab-btn ${activeTab === 'character' ? 'active' : ''}`}
                onClick={() => setActiveTab('character')}
              >
-               CHARACTER
+               CHARACTER SHEET
              </button>
              <button 
                className={`tab-btn ${activeTab === 'world' ? 'active' : ''}`}
                onClick={() => setActiveTab('world')}
              >
-               WORLD
+               WORLD SHEET
              </button>
           </div>
 
@@ -379,26 +394,76 @@ function App() {
                     </div>
                 </div>
                 
-                <div className="description-box">
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'5px'}}>
-                        <div style={{display:'flex', flexDirection:'column'}}>
-                            <label>CHARACTER TAGS</label>
-                            <span className="input-instruction">Separate with commas (Max 5)</span>
+                {/* Two Column Layout */}
+                <div className="sheet-columns">
+                    
+                    {/* LEFT: Description (AI Updates) */}
+                    <div className="sheet-left">
+                        {/* CHANGED LABEL BELOW */}
+                        <label style={{fontSize:'0.7rem', color:'#666', marginBottom:'5px'}}>CHARACTER SUMMARY</label>
+                        <textarea 
+                            style={{flexGrow:1, resize:'none'}}
+                            placeholder="Briefly describe your character..." 
+                            value={userDescription}
+                            onChange={e => setUserDescription(e.target.value)}
+                            disabled={isReady} 
+                        />
+                    </div>
+
+                    {/* RIGHT: User Entries */}
+                    <div className="sheet-right">
+                        
+                        {/* TAGS INPUT */}
+                        <div style={{marginBottom: '10px'}}>
+                            <div style={{display:'flex', justifyContent:'space-between'}}>
+                                <label style={{fontSize:'0.7rem', color:'#666'}}>TAGS</label>
+                                <span className="input-instruction">Max 5</span>
+                            </div>
+                            <input 
+                                className="sheet-input"
+                                placeholder="e.g. Human, Warrior, Strong" 
+                                value={tagsInput}
+                                onChange={e => setTagsInput(e.target.value)}
+                                disabled={isReady} 
+                            />
                         </div>
-                        {!isReady && (
-                            <button className="ready-btn" onClick={handleReady}>
+
+                        {/* AMBITION INPUT */}
+                        <div style={{marginBottom: '10px'}}>
+                            <label style={{fontSize:'0.7rem', color:'#666'}}>AMBITION</label>
+                            <input 
+                                className="sheet-input"
+                                placeholder="e.g. Become King" 
+                                value={ambitionInput}
+                                onChange={e => setAmbitionInput(e.target.value)}
+                                disabled={isReady} 
+                            />
+                        </div>
+
+                        {/* SECRET INPUT */}
+                        <div style={{flexGrow: 1, display:'flex', flexDirection:'column', marginBottom:'10px'}}>
+                            <label style={{fontSize:'0.7rem', color:'#666'}}>SECRET</label>
+                            <textarea 
+                                style={{flexGrow:1, background:'#000', border:'1px solid #333', color:'var(--text-main)', padding:'8px', outline:'none', resize:'none', fontSize:'0.9rem'}}
+                                placeholder="Hidden info..." 
+                                value={secretInput}
+                                onChange={e => setSecretInput(e.target.value)}
+                                disabled={isReady} 
+                            />
+                        </div>
+
+                        {/* READY BUTTON */}
+                        {!isReady ? (
+                            <button className="ready-btn" onClick={handleReady} style={{width:'100%', padding:'10px'}}>
                                 CONFIRM & READY
                             </button>
+                        ) : (
+                            <div style={{textAlign:'center', color:'var(--terminal-green)', border:'1px solid var(--terminal-green)', padding:'5px', fontSize:'0.8rem', fontWeight:'bold'}}>
+                                LOCKED IN
+                            </div>
                         )}
-                        {isReady && <span style={{color:'var(--terminal-green)', fontSize:'0.7rem'}}>LOCKED</span>}
+
                     </div>
-                    
-                    <textarea 
-                        placeholder="e.g. Human, Warrior, Strong, Brave, Noble" 
-                        value={userDescription}
-                        onChange={e => setUserDescription(e.target.value)}
-                        disabled={isReady} // Lock the input if ready
-                    />
                 </div>
               </>
           ) : (
