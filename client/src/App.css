@@ -304,11 +304,14 @@ button {
   display: flex;
   flex-direction: column;
   background-color: #111;
+  height: 100vh; /* Ensure full height */
+  overflow: hidden; /* Prevent scrolling on the panel itself */
 }
 
-/* Party Grid */
+/* Party Grid - UPDATED SIZE */
 .party-grid {
-  flex: 1; 
+  flex: 0 0 280px; /* Fixed height ~30vh, preventing resize */
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: repeat(3, 1fr);
@@ -371,14 +374,16 @@ button {
 }
 .empty-slot { color: #333; font-size: 0.8rem; }
 
-/* Detail View */
+/* Detail View - UPDATED TO FILL REMAINING SPACE */
 .detail-view {
-  flex: 1;
+  flex: 1; /* Takes all remaining space */
   padding: 20px;
   display: flex;
   flex-direction: column;
   background: #0a0a0a;
   color: var(--accent-gold);
+  height: 100%; /* Ensure it fills parent */
+  overflow: hidden; /* Lock overflow to handle inner scrolling */
 }
 
 /* Tab Bar Styling */
@@ -386,6 +391,7 @@ button {
     display: flex;
     margin-bottom: 15px;
     border-bottom: 1px solid #333;
+    flex-shrink: 0; /* Prevent header from squishing */
 }
 
 .tab-btn {
@@ -414,6 +420,7 @@ button {
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 20px;
+    flex-shrink: 0;
 }
 
 .detail-header {
@@ -451,6 +458,7 @@ button {
     display: flex;
     gap: 20px;
     height: 100%;
+    overflow: hidden; /* Internal scrolling handled by textareas */
 }
 
 .sheet-left {
@@ -520,17 +528,19 @@ button {
     font-size: 0.8rem;
 }
 
-/* World Sheet Styles */
+/* World Sheet Styles - UPDATED FOR SCROLLING */
 .world-sheet {
     display: flex;
     flex-direction: column;
     height: 100%;
+    overflow: hidden; /* Contain children */
 }
 
 .world-header {
     margin-bottom: 15px;
     border-bottom: 1px solid #333;
     padding-bottom: 10px;
+    flex-shrink: 0;
 }
 
 .world-header h2 {
@@ -551,6 +561,7 @@ button {
     color: #ccc;
     margin-bottom: 20px;
     line-height: 1.4;
+    flex-shrink: 0;
 }
 
 .world-events-title {
@@ -559,19 +570,23 @@ button {
     margin-bottom: 10px;
     text-transform: uppercase;
     font-weight: bold;
+    flex-shrink: 0;
 }
 
+/* SCROLLABLE EVENTS LIST */
 .world-events-list {
-    flex-grow: 1;
-    overflow-y: auto;
+    flex-grow: 1; /* Takes remaining space */
+    overflow-y: auto; /* Activates scrollbar */
     font-size: 0.85rem;
     color: #aaa;
     border-top: 1px solid #333;
     padding-top: 10px;
+    padding-right: 5px; /* Spacing for scrollbar */
 }
 
 .world-events-list::-webkit-scrollbar { width: 5px; }
 .world-events-list::-webkit-scrollbar-thumb { background: #333; }
+.world-events-list::-webkit-scrollbar-track { background: #000; }
 
 .event-item {
     margin-bottom: 8px;
@@ -633,4 +648,87 @@ button {
 .join-sm-btn:hover {
     background: var(--terminal-green);
     color: #000;
+}
+
+.map-placeholder {
+    width: 100%;
+    height: 120px; /* Reduced height to save space */
+    border: 2px dashed #333;
+    background: #080808;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 20px;
+    margin-top: 10px;
+    transition: border-color 0.3s;
+    flex-shrink: 0;
+}
+
+.map-placeholder:hover {
+    border-color: var(--accent-dim);
+}
+
+.map-text {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 1.2rem;
+    color: var(--accent-dim);
+    letter-spacing: 3px;
+    font-weight: bold;
+}
+
+.map-subtext {
+    font-size: 0.7rem;
+    color: #444;
+    margin-top: 5px;
+    font-style: italic;
+}
+
+/* Updated Input Area Layout */
+.input-area {
+    /* ... existing props ... */
+    padding-right: 0; /* Remove right padding so dice sits flush if desired */
+    display: flex;
+    align-items: stretch; /* Stretch children to fill height */
+}
+
+.input-area input {
+    /* ... existing props ... */
+    flex-grow: 1; /* Input takes all remaining space */
+}
+
+/* Dice Display Section */
+.dice-display {
+    width: 80px;
+    border-left: 1px solid var(--accent-dim);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: #0a0a0a;
+    margin: -15px -15px -15px 10px; /* Negate padding of parent to fill height */
+    padding: 0 10px;
+}
+
+.dice-label {
+    font-size: 0.6rem;
+    color: #555;
+    margin-bottom: 2px;
+}
+
+.dice-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--text-main);
+}
+
+/* Critical Colors */
+.dice-value.crit-success {
+    color: var(--accent-gold);
+    text-shadow: 0 0 10px rgba(255, 193, 7, 0.5);
+}
+
+.dice-value.crit-fail {
+    color: var(--alert-red);
+    text-shadow: 0 0 10px rgba(255, 51, 51, 0.5);
 }

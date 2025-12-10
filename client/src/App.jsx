@@ -13,10 +13,10 @@ function App() {
   const [username, setUsername] = useState('');
   const [room, setRoom] = useState('');
   
-  // New: List of active rooms
+  // List of active rooms
   const [activeRooms, setActiveRooms] = useState([]);
 
-  //world tracking
+  // World tracking
   const [currentWorldName, setCurrentWorldName] = useState('');
   const [worldData, setWorldData] = useState(null); 
   
@@ -33,7 +33,7 @@ function App() {
   const [ambitionInput, setAmbitionInput] = useState('Unknown');
   const [secretInput, setSecretInput] = useState('');
 
-  //creation parameters
+  // Creation parameters
   const [setting, setSetting] = useState('Medieval Fantasy');
   const [realism, setRealism] = useState('High');
   const [selectedWorld, setSelectedWorld] = useState('');
@@ -44,6 +44,7 @@ function App() {
   const [partyStats, setPartyStats] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [statusMsg, setStatusMsg] = useState('System Ready...');
+  const [lastRoll, setLastRoll] = useState(null);
   
   const [activeTab, setActiveTab] = useState('character'); 
 
@@ -173,7 +174,10 @@ function App() {
 
   const sendAction = () => {
     if (inputValue.trim()) {
-      socket.emit('player_action', { username, room, message: inputValue });
+      const roll = Math.floor(Math.random() * 20) + 1;
+      setLastRoll(roll);
+
+      socket.emit('player_action', { username, room, message: inputValue, roll: roll });
       setInputValue('');
     }
   };
@@ -353,6 +357,13 @@ function App() {
             placeholder="Describe your action..."
             disabled={messages.length === 0} 
           />
+          {/* New Dice Section */}
+          <div className="dice-display">
+              <div className="dice-label">D20</div>
+              <div className={`dice-value ${lastRoll === 20 ? 'crit-success' : lastRoll === 1 ? 'crit-fail' : ''}`}>
+                  {lastRoll !== null ? lastRoll : '-'}
+              </div>
+          </div>
         </div>
       </div>
 
@@ -484,6 +495,12 @@ function App() {
                             <h2>{worldData.name}</h2>
                             <div className="world-meta">
                                 <span>{worldData.setting}</span> | <span>{worldData.realism} Realism</span>
+                            </div>
+                        </div>
+                        <div className="map-placeholder">
+                            <div className="map-text">HIC SUNT DRACONES</div>
+                            <div className="map-subtext">
+                                (Territory Uncharted)
                             </div>
                         </div>
                         <div className="world-desc">

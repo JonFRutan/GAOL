@@ -82,9 +82,8 @@ class Player:
         self.status = "Healthy"  # e.g. Healthy, Wounded, Unconscious, Dead
         self.inventory = []
         self.current_action = None  # Stores what they typed this turn
+        self.current_roll = None # dice roll
         self.has_acted = False
-        
-        # New attributes for lobby/description logic
         self.description = "" # Restored description field
         self.tags = []
         self.ambition = "Unknown"
@@ -93,6 +92,7 @@ class Player:
 
     def reset_turn(self):
         self.current_action = None
+        self.current_roll = None
         self.has_acted = False
 
     def __repr__(self):
@@ -133,7 +133,8 @@ class GameRoom:
         actions = []
         for p in self.players.values():
             action_str = p.current_action if p.current_action else "No action taken."
-            actions.append(f"- {p.username} attempts to: {action_str}")
+            roll_info = f"Rolled: {p.current_roll/20}" if p.current_roll else "(No Roll)"
+            actions.append(f"- {p.username} {roll_info} attempts to: {action_str}")
         return "\n".join(actions)
 
     def reset_turns(self):
@@ -239,12 +240,13 @@ def generate_ai_response(game_room, is_embark=False):
     {special_instructions}
     
     INSTRUCTIONS:
-    1. Narrate the outcome of their actions dramatically (max 3 sentences).
-    2. Update player stats if they took damage or used items.
-    3. You can update a player's Tags (e.g., if they mutate) or Ambition (if it changes).
-    4. You can update a player's Description (e.g. if they are scarred or change appearance).
-    5. If a MAJOR world-altering event occurs (e.g., a city falls, a god dies), add it to "world_updates".
-    6. Return ONLY a JSON object with this exact schema:
+    1. Narrate the outcome of their actions dramatically (max 4 sentences).
+    2. PAY ATTENTION TO DICE ROLLS: 1 is a Critical Failure (disaster), 20 is a Critical Success (miracle), 10 is average. 
+    3. Update player stats if they took damage or used items.
+    4. You can update a player's Tags (e.g., if they mutate) or Ambition (if it changes).
+    5. You can update a player's Description (e.g. if they are scarred or change appearance).
+    6. If a MAJOR world-altering event occurs (e.g., a city falls, a god dies), add it to "world_updates".
+    7. Return ONLY a JSON object with this exact schema:
     
     {{
       "story_text": "The narrative description...",
@@ -497,7 +499,7 @@ def handle_get_rooms():
             'is_started': g.is_started
         })
     emit('room_list', room_data)
-    
+
 #handle when a player disconnects
 @socketio.on('disconnect')
 def on_disconnect():
@@ -627,7 +629,9 @@ def handle_action(data):
     #check to make sure the rooms and players exist
     room = data['room']
     action_text = data['message']
+    roll = data.get('roll', 10)
     sid = request.sid
+
     if room not in games:
         return
     game = games[room]
@@ -637,6 +641,7 @@ def handle_action(data):
     
     #lock in players move
     player.current_action = action_text
+    player.current_roll = roll
     player.has_acted = True
     
     #notify that a player has finished submitting their action (does not display their input)
