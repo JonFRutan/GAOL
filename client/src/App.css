@@ -639,6 +639,11 @@ button {
     background: rgba(255, 255, 255, 0.05);
 }
 
+.room-table th:nth-child(4), .room-table td:nth-child(4) {
+    text-align: center;
+    width: 60px;
+}
+
 .join-sm-btn {
     background: transparent;
     border: 1px solid var(--terminal-green);

@@ -20,7 +20,8 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 #Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+DEFAULT_API_KEY = os.getenv("GEMINI_API_KEY")
+genai.configure(api_key=DEFAULT_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
 #temp game storage
 # {'room_id': GameRoom Object}
@@ -100,11 +101,12 @@ class Player:
 
 class GameRoom:
     #updated init to include setting, realism, and world binding
-    def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None):
+    def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None, custom_api_key=None):
         self.room_id = room_id
         self.setting = setting
         self.realism = realism
         self.world_id = world_id
+        self.custom_api_key = custom_api_key #stores override api keys
         self.history = []  #list of strings or dicts
         self.players = {}  #dict: { sid: Player }
         self.is_started = False 
@@ -260,10 +262,18 @@ def generate_ai_response(game_room, is_embark=False):
     """
     
     try:
-        response = model.generate_content(prompt, generation_config=generation_config)
+        #try seeing an an override API key is available
+        active_key = DEFAULT_API_KEY
+        if game_room.custom_api_key and len(game_room.custom_api_key) == 39: #Gemini API keys are 39 characters long
+            active_key = game_room.custom_api_key
+        genai.configure(api_key=active_key) #update the api_key with the override
+
+        response = model.generate_content(prompt, generation_config=generation_config) #generate response
+
         return json.loads(response.text) # Parse JSON string to Python Dict
     except Exception as e:
         print(f"AI Error: {e}")
+        genai.configure(api_key=DEFAULT_API_KEY) #if an error happens, fallback on the default key
         return {"story_text": "GAOL has gone silent...", "updates": {}, "world_updates": []}
 
 #extracted turn processing so it can be triggered by disconnects or actions
@@ -373,6 +383,7 @@ def handle_create_room(data):
     req_realism = data.get('realism', 'High')
     world_selection = data.get('world_selection') 
     new_world_name = data.get('new_world_name')
+    custom_api_key = data.get('custom_api_key')
 
     if room_id in games:
         emit('status', {'msg': 'ERROR: Room ID already exists.'})
@@ -406,7 +417,7 @@ def handle_create_room(data):
             save_worlds() 
         final_world_id = list(worlds.keys())[0]
 
-    games[room_id] = GameRoom(room_id, final_setting, final_realism, final_world_id)
+    games[room_id] = GameRoom(room_id, final_setting, final_realism, final_world_id, custom_api_key)
     
     #manually trigger join logic for the creator
     #using a helper function logic here would be cleaner but keeping inline for now
@@ -496,7 +507,8 @@ def handle_get_rooms():
             'world': world_name,
             'setting': g.setting,
             'player_count': len(g.players),
-            'is_started': g.is_started
+            'is_started': g.is_started,
+            'has_custom_key': bool(g.custom_api_key) #sends if the room has a custom API key
         })
     emit('room_list', room_data)
 
@@ -504,11 +516,18 @@ def handle_get_rooms():
 @socketio.on('disconnect')
 def on_disconnect():
     sid = request.sid
-    for room_id, game in games.items():
+    for room_id, game in list(games.items()):
+        game = games[room_id]
         if sid in game.players:
             name = game.players[sid].username
             game.remove_player(sid)
             emit('status', {'msg': f'{name} disconnected.'}, room=room_id)
+
+            #delete a room if it's empty
+            if len(game.playes) == 0:
+                print(f"Deleting empty room: {room_id}")
+                del games[room_id]
+                continue
             
             #push new state immediately to prevent ghost cards
             game_state_export = [

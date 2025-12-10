@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-// Using the localhost URL explicitly based on previous troubleshooting
 const SOCKET_URL = 'http://localhost:5000';
 const socket = io(SOCKET_URL);
 
@@ -13,21 +12,17 @@ function App() {
   const [username, setUsername] = useState('');
   const [room, setRoom] = useState('');
   
-  // List of active rooms
   const [activeRooms, setActiveRooms] = useState([]);
 
   // World tracking
   const [currentWorldName, setCurrentWorldName] = useState('');
   const [worldData, setWorldData] = useState(null); 
   
-  // Game Flow State
   const [isAdmin, setIsAdmin] = useState(false); 
   const [isReady, setIsReady] = useState(false); 
   
-  // Sheet View State
   const [selectedPlayer, setSelectedPlayer] = useState(null); 
 
-  // Character Sheet Inputs
   const [userDescription, setUserDescription] = useState(''); 
   const [tagsInput, setTagsInput] = useState('');
   const [ambitionInput, setAmbitionInput] = useState('Unknown');
@@ -39,8 +34,9 @@ function App() {
   const [selectedWorld, setSelectedWorld] = useState('');
   const [newWorldName, setNewWorldName] = useState('');
   const [availableWorlds, setAvailableWorlds] = useState([]);
+  // UPDATED: State for Custom API Key
+  const [customApiKey, setCustomApiKey] = useState('');
 
-  // things relevant to players
   const [messages, setMessages] = useState([]);
   const [partyStats, setPartyStats] = useState([]);
   const [inputValue, setInputValue] = useState('');
@@ -77,7 +73,6 @@ function App() {
 
     socket.on('world_update', (data) => setWorldData(data));
 
-    // Fetch initial data
     socket.emit('get_worlds');
     socket.emit('get_rooms');
 
@@ -126,13 +121,12 @@ function App() {
     }
   };
 
-  // quick join from the room table
   const handleQuickJoin = (targetRoomId) => {
       if(!username.trim()) {
           setStatusMsg("ERROR: Enter a username first.");
           return;
       }
-      setRoom(targetRoomId); // Update state for visual consistency
+      setRoom(targetRoomId); 
       socket.emit('join', { username, room: targetRoomId });
       setSelectedPlayer(username);
   };
@@ -146,7 +140,8 @@ function App() {
         setting,
         realism,
         world_selection: finalWorldSelection,
-        new_world_name: newWorldName
+        new_world_name: newWorldName,
+        custom_api_key: customApiKey // UPDATED: Send Custom Key
       });
       setSelectedPlayer(username);
     }
@@ -251,6 +246,18 @@ function App() {
                   </div>
                  </>
               )}
+
+              {/* Custom API Key Input */}
+              <div className="form-row">
+                <label className="login-label" style={{color: 'var(--terminal-green)'}}>
+                  Gemini API Key
+                </label>
+                <input 
+                    placeholder="Optional" 
+                    onChange={e => setCustomApiKey(e.target.value)}
+                    type="password"
+                />
+              </div>
             </>
           )}
 
@@ -275,6 +282,7 @@ function App() {
                               <th>ID</th>
                               <th>World</th>
                               <th>#</th>
+                              <th>API</th> {/* UPDATED: New Column */}
                               <th>Action</th>
                           </tr>
                       </thead>
@@ -284,6 +292,13 @@ function App() {
                                   <td style={{color: 'var(--accent-gold)'}}>{r.id}</td>
                                   <td>{r.world}</td>
                                   <td>{r.player_count}/6</td>
+                                  <td>
+                                      {r.has_custom_key ? (
+                                          <span style={{color:'var(--terminal-green)', fontWeight:'bold'}}>SELF</span>
+                                      ) : (
+                                          <span style={{color:'#444'}}>SYS</span>
+                                      )}
+                                  </td>
                                   <td style={{textAlign:'right'}}>
                                       <button 
                                           className="join-sm-btn"
@@ -304,6 +319,7 @@ function App() {
     );
   }
 
+  // ... (Rest of the render logic remains identical)
   return (
     <div className="main-layout">
       {/* Left side */}
