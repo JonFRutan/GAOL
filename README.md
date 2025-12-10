@@ -31,9 +31,9 @@ Begin by defining your character with a summary, tags, ambitions, and **secrets*
 * **Evolution:** Summaries, tags, and statuses update automatically as you adventure.
 
 ### Multiplayer Party
-Supports **up to 6 players** via hot-dropping and hot-joining.
+Supports **up to 6 players** with support for hot-dropping and hot-joining.
 * **Collective Storytelling:** The irreverent GAOL remains impartial, weighing every player's choice.
-* **Co-op (mostly):** Players should work together, though hidden secrets may cause friction...
+* **Co-op (mostly):** Players *may* work together, although ambitions and secrets may cause friction...
 
 
 ### The Dice Will Decide
