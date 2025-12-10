@@ -34,8 +34,10 @@ function App() {
   const [selectedWorld, setSelectedWorld] = useState('');
   const [newWorldName, setNewWorldName] = useState('');
   const [availableWorlds, setAvailableWorlds] = useState([]);
-
+  // UPDATED: State for Custom API Key
   const [customApiKey, setCustomApiKey] = useState('');
+  // UPDATED: Track if server has a default key (null = loading)
+  const [serverHasKey, setServerHasKey] = useState(null);
 
   const [messages, setMessages] = useState([]);
   const [partyStats, setPartyStats] = useState([]);
@@ -64,6 +66,11 @@ function App() {
         if(data.length > 0) setSelectedWorld(data[0].id);
         else setSelectedWorld('NEW');
     });
+    
+    // UPDATED: Listen for server config to know if .env key exists
+    socket.on('server_config', (data) => {
+        setServerHasKey(data.has_env_key);
+    });
 
     socket.on('room_list', (data) => {
         setActiveRooms(data);
@@ -88,6 +95,7 @@ function App() {
       socket.off('status'); 
       socket.off('game_state_update'); 
       socket.off('world_list');
+      socket.off('server_config');
       socket.off('room_list');
       socket.off('join_success');
       socket.off('world_update');
@@ -139,22 +147,39 @@ function App() {
   };
 
   const handleCreate = () => {
-    if (username && room) {
-      if (customApiKey && customApiKey.trim().length > 0) {
-        localStorage.setItem('gaol_api_key', customApiKey);
-      }
-      const finalWorldSelection = selectedWorld || 'NEW';
-      socket.emit('create_room', {
-        username,
-        room,
-        setting,
-        realism,
-        world_selection: finalWorldSelection,
-        new_world_name: newWorldName,
-        custom_api_key: customApiKey
-      });
-      setSelectedPlayer(username);
+    if (!username || !room) {
+        setStatusMsg("ERROR: Username and Room Code required.");
+        return;
     }
+    
+    // UPDATED: Strict Validation
+    // Use custom key if present, otherwise rely on server key.
+    // If NO custom key AND NO server key, block creation.
+    const hasCustom = customApiKey && customApiKey.trim().length > 10;
+    
+    // Default to false for safety if server config hasn't loaded yet
+    const safeServerHasKey = serverHasKey === true;
+    
+    if (!hasCustom && !safeServerHasKey) {
+        setStatusMsg("REQUIRED: Enter API Key (Server has no default).");
+        return;
+    }
+
+    if (hasCustom) {
+        localStorage.setItem('gaol_api_key', customApiKey);
+    }
+
+    const finalWorldSelection = selectedWorld || 'NEW';
+    socket.emit('create_room', {
+      username,
+      room,
+      setting,
+      realism,
+      world_selection: finalWorldSelection,
+      new_world_name: newWorldName,
+      custom_api_key: customApiKey 
+    });
+    setSelectedPlayer(username);
   };
 
   const handleEmbark = () => {
@@ -263,10 +288,13 @@ function App() {
                   Gemini API Key
                 </label>
                 <input 
-                    placeholder="Optional (Saved locally)" 
-                    value={customApiKey} // Bind value to state
+                    placeholder={serverHasKey ? "Server Key Active (Optional)" : "REQUIRED"}
+                    value={customApiKey}
                     onChange={e => setCustomApiKey(e.target.value)}
                     type="password"
+                    style={{
+                        borderColor: (!customApiKey && !serverHasKey) ? 'var(--alert-red)' : 'var(--accent-dim)'
+                    }}
                 />
               </div>
             </>
@@ -307,7 +335,11 @@ function App() {
                                       {r.has_custom_key ? (
                                           <span style={{color:'var(--terminal-green)', fontWeight:'bold'}}>SELF</span>
                                       ) : (
-                                          <span style={{color:'#444'}}>SYS</span>
+                                          serverHasKey ? (
+                                              <span style={{color:'#444'}}>SYS</span>
+                                          ) : (
+                                              <span style={{color:'var(--alert-red)', fontWeight:'bold'}}>ERR</span>
+                                          )
                                       )}
                                   </td>
                                   <td style={{textAlign:'right'}}>

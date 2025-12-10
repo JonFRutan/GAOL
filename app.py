@@ -19,8 +19,19 @@ app = Flask(__name__,
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
+
 #Gemini API
-#Removed default key loading to enforce user-provided keys
+# UPDATED: Robust key loading
+raw_key = os.getenv("GEMINI_API_KEY")
+# Treat empty strings or whitespace as None
+DEFAULT_API_KEY = raw_key.strip() if raw_key and raw_key.strip() else None
+
+# Debug print to verify state on startup
+if DEFAULT_API_KEY:
+    print(f"[SYSTEM] Server API Key Loaded: YES (Ends with {DEFAULT_API_KEY[-4:]})")
+else:
+    print("[SYSTEM] Server API Key Loaded: NO (User must provide key)")
+
 model = genai.GenerativeModel('gemini-2.5-flash')
 #temp game storage
 # {'room_id': GameRoom Object}
@@ -261,12 +272,21 @@ def generate_ai_response(game_room, is_embark=False):
     """
     
     try:
-        #try seeing an an override API key is available
-        #Strictly require a key. No fallback.
-        if not game_room.custom_api_key or len(game_room.custom_api_key) < 10:
-             return {"story_text": "CRITICAL ERROR: No Gemini API Key provided. You must initialize a room with a valid API Key.", "updates": {}, "world_updates": []}
+        # Determine which key to use
+        active_key = None
+        
+        # 1. Prefer Room Specific Key
+        if game_room.custom_api_key and len(game_room.custom_api_key) > 10:
+            active_key = game_room.custom_api_key
+        # 2. Fallback to Server Environment Key (if available)
+        elif DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10:
+            active_key = DEFAULT_API_KEY
+            
+        # 3. If neither exists, error out
+        if not active_key:
+             return {"story_text": "CRITICAL ERROR: No Gemini API Key provided. Enter one in Room Creation or check server .env config.", "updates": {}, "world_updates": []}
              
-        genai.configure(api_key=game_room.custom_api_key) #update the api_key with the override
+        genai.configure(api_key=active_key) #update the api_key
 
         response = model.generate_content(prompt, generation_config=generation_config) #generate response
 
@@ -371,6 +391,9 @@ def index():
 def handle_get_worlds():
     world_list = [{'id': k, 'name': v.name} for k, v in worlds.items()]
     emit('world_list', world_list)
+    # UPDATED: Tell client if server has a default key
+    has_key = bool(DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10)
+    emit('server_config', {'has_env_key': has_key})
 
 #handles room creation logic separate from joining
 @socketio.on('create_room')
@@ -387,6 +410,14 @@ def handle_create_room(data):
 
     if room_id in games:
         emit('status', {'msg': 'ERROR: Room ID already exists.'})
+        return
+        
+    # Validation: Check if a key is available EITHER from input OR env
+    has_custom_key = custom_api_key and len(custom_api_key) > 10
+    has_env_key = DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10
+    
+    if not (has_custom_key or has_env_key):
+        emit('status', {'msg': 'ERROR: API Key Required (Server has none, please provide one).'})
         return
 
     final_world_id = None
@@ -524,7 +555,7 @@ def on_disconnect():
             emit('status', {'msg': f'{name} disconnected.'}, room=room_id)
 
             #delete a room if it's empty
-            if len(game.playes) == 0:
+            if len(game.players) == 0:
                 print(f"Deleting empty room: {room_id}")
                 del games[room_id]
                 continue
