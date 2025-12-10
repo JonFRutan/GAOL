@@ -12,7 +12,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 #flask API
-app=Flask(__name__)
+app = Flask(__name__, 
+            static_folder='client/dist/assets', 
+            template_folder='client/dist', 
+            static_url_path='/assets')
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
