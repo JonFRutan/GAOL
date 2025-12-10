@@ -327,6 +327,19 @@ button {
   text-align: center;
   transition: all 0.2s;
   position: relative;
+  cursor: pointer; /* Clickable */
+}
+
+/* New: Hover state */
+.mini-card:hover {
+  border-color: #fff;
+}
+
+/* New: Selected state */
+.mini-card.selected {
+  border: 2px solid var(--accent-gold);
+  background: #111;
+  box-shadow: 0 0 10px rgba(255, 193, 7, 0.1);
 }
 
 .mini-name { 
@@ -354,6 +367,7 @@ button {
 .mini-card.empty {
   border: 1px dashed #333;
   background: transparent;
+  cursor: default; /* Not clickable */
 }
 .empty-slot { color: #333; font-size: 0.8rem; }
 
@@ -493,6 +507,19 @@ button {
 }
 .sheet-input:focus { border-color: var(--accent-dim); }
 
+/* Secret mask */
+.secret-mask {
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px dashed #444;
+    color: #444;
+    font-style: italic;
+    background: #050505;
+    font-size: 0.8rem;
+}
+
 /* World Sheet Styles */
 .world-sheet {
     display: flex;
@@ -548,4 +575,62 @@ button {
 
 .event-item {
     margin-bottom: 8px;
+}
+
+.room-list-container {
+    margin-top: 30px;
+    width: 100%;
+    border-top: 1px solid #333;
+    padding-top: 20px;
+}
+
+.room-list-container h3 {
+    font-size: 1rem;
+    color: var(--text-main);
+    text-align: center;
+    margin-bottom: 15px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.room-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    color: #888;
+}
+
+.room-table th {
+    text-align: left;
+    color: var(--accent-dim);
+    border-bottom: 1px solid #333;
+    padding: 8px;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+}
+
+.room-table td {
+    padding: 8px;
+    border-bottom: 1px solid #111;
+}
+
+.room-table tr:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.join-sm-btn {
+    background: transparent;
+    border: 1px solid var(--terminal-green);
+    color: var(--terminal-green);
+    padding: 4px 10px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    transition: all 0.2s;
+}
+
+.join-sm-btn:hover {
+    background: var(--terminal-green);
+    color: #000;
 }

@@ -2,26 +2,33 @@ import { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import './App.css';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
+// Using the localhost URL explicitly based on previous troubleshooting
+const SOCKET_URL = 'http://localhost:5000';
 const socket = io(SOCKET_URL);
 
 function App() {
   const [gameState, setGameState] = useState('login'); 
-  //login toggle state
   const [loginMode, setLoginMode] = useState('join'); 
 
   const [username, setUsername] = useState('');
   const [room, setRoom] = useState('');
+  
+  // New: List of active rooms
+  const [activeRooms, setActiveRooms] = useState([]);
+
   //world tracking
   const [currentWorldName, setCurrentWorldName] = useState('');
-  const [worldData, setWorldData] = useState(null); // stores detailed world info
+  const [worldData, setWorldData] = useState(null); 
   
   // Game Flow State
-  const [isAdmin, setIsAdmin] = useState(false); // Only true for the room creator
-  const [isReady, setIsReady] = useState(false); // Local ready state for Lobby
+  const [isAdmin, setIsAdmin] = useState(false); 
+  const [isReady, setIsReady] = useState(false); 
   
-  // Character Sheet State
-  const [userDescription, setUserDescription] = useState(''); // Visual/Narrative description
+  // Sheet View State
+  const [selectedPlayer, setSelectedPlayer] = useState(null); 
+
+  // Character Sheet Inputs
+  const [userDescription, setUserDescription] = useState(''); 
   const [tagsInput, setTagsInput] = useState('');
   const [ambitionInput, setAmbitionInput] = useState('Unknown');
   const [secretInput, setSecretInput] = useState('');
@@ -38,63 +45,47 @@ function App() {
   const [inputValue, setInputValue] = useState('');
   const [statusMsg, setStatusMsg] = useState('System Ready...');
   
-  //UI state
-  const [activeTab, setActiveTab] = useState('character'); // 'character' or 'world'
+  const [activeTab, setActiveTab] = useState('character'); 
 
   const chatEndRef = useRef(null);
 
   useEffect(() => {
-    //basic socket listeners
-    socket.on('message', (data) => {
-      setMessages((prev) => [...prev, data]);
-    });
-
-    socket.on('status', (data) => {
-      setStatusMsg(data.msg);
-    });
-
-    socket.on('game_state_update', (data) => {
-      setPartyStats(data);
-    });
+    socket.on('message', (data) => setMessages((prev) => [...prev, data]));
+    socket.on('status', (data) => setStatusMsg(data.msg));
+    socket.on('game_state_update', (data) => setPartyStats(data));
     
-    //populate world dropdown
     socket.on('world_list', (data) => {
         setAvailableWorlds(data);
-        if(data.length > 0) {
-            setSelectedWorld(data[0].id);
-        } else {
-            setSelectedWorld('NEW');
-        }
+        if(data.length > 0) setSelectedWorld(data[0].id);
+        else setSelectedWorld('NEW');
     });
 
-    //successful join handler
+    // New: Listen for room list updates
+    socket.on('room_list', (data) => {
+        setActiveRooms(data);
+    });
+
     socket.on('join_success', (data) => {
       setRoom(data.room);
       setCurrentWorldName(data.world);
-      setWorldData(data.world_details); //store full world details
-      setIsAdmin(data.is_admin); // Set admin privileges
-      
-      //load existing history for late joiners
-      if(data.history && data.history.length > 0) {
-          setMessages(data.history);
-      }
-      
+      setWorldData(data.world_details); 
+      setIsAdmin(data.is_admin); 
+      if(data.history && data.history.length > 0) setMessages(data.history);
       setGameState('playing');
     });
 
-    //listen for dynamic world updates (lore added during game)
-    socket.on('world_update', (data) => {
-        setWorldData(data);
-    });
+    socket.on('world_update', (data) => setWorldData(data));
 
-    //fetch worlds on mount
+    // Fetch initial data
     socket.emit('get_worlds');
+    socket.emit('get_rooms'); // <--- Ask for rooms on load
 
     return () => { 
       socket.off('message'); 
       socket.off('status'); 
       socket.off('game_state_update'); 
       socket.off('world_list');
+      socket.off('room_list');
       socket.off('join_success');
       socket.off('world_update');
     };
@@ -104,12 +95,10 @@ function App() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Derived state for the current user's stats
   const myStats = partyStats.find(p => p.name === username) || { 
     name: username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: ''
   };
 
-  // Sync logic: If the user is locked (ready), update their text box if the Server (AI) changes it.
   useEffect(() => {
       if(isReady) {
           if(myStats.description) setUserDescription(myStats.description);
@@ -118,18 +107,38 @@ function App() {
       }
   }, [myStats.description, myStats.tags, myStats.ambition, isReady]);
 
-  //join existing room
+  useEffect(() => {
+    if(username && !selectedPlayer) setSelectedPlayer(username);
+  }, [username, selectedPlayer]);
+
+  const displayedPlayer = partyStats.find(p => p.name === selectedPlayer) || myStats;
+  const isOwnSheet = displayedPlayer.name === username;
+
   const handleJoin = () => {
+    if(!username.trim()) {
+        setStatusMsg("ERROR: Username required.");
+        return;
+    }
     if (username && room) {
       socket.emit('join', { username, room });
+      setSelectedPlayer(username);
     }
   };
 
-  //create new room logic
+  // New: Handle Quick Join from Table
+  const handleQuickJoin = (targetRoomId) => {
+      if(!username.trim()) {
+          setStatusMsg("ERROR: Enter a username first.");
+          return;
+      }
+      setRoom(targetRoomId); // Update state for visual consistency
+      socket.emit('join', { username, room: targetRoomId });
+      setSelectedPlayer(username);
+  };
+
   const handleCreate = () => {
     if (username && room) {
       const finalWorldSelection = selectedWorld || 'NEW';
-      
       socket.emit('create_room', {
         username,
         room,
@@ -138,6 +147,7 @@ function App() {
         world_selection: finalWorldSelection,
         new_world_name: newWorldName
       });
+      setSelectedPlayer(username);
     }
   };
 
@@ -146,26 +156,15 @@ function App() {
   };
 
   const handleReady = () => {
-      //split by comma and filter empty entries
       const tags = tagsInput.split(',').filter(t => t.trim().length > 0);
-
-      if(tags.length === 0) {
-          setStatusMsg("Define your character tags.");
-          return;
-      }
-      if(tags.length > 5) {
-          setStatusMsg("Too many tags (Max 5).");
-          return;
-      }
-      if(!ambitionInput.trim()) {
-          setStatusMsg("Define your ambition.");
-          return;
-      }
+      if(tags.length === 0) { setStatusMsg("Define your character tags."); return; }
+      if(tags.length > 5) { setStatusMsg("Too many tags (Max 5)."); return; }
+      if(!ambitionInput.trim()) { setStatusMsg("Define your ambition."); return; }
 
       setIsReady(true);
       socket.emit('player_ready', { 
           room, 
-          description: userDescription, // send the visual description
+          description: userDescription, 
           tags: tags,
           ambition: ambitionInput,
           secret: secretInput
@@ -179,7 +178,6 @@ function App() {
     }
   };
 
-  // Determine if Embark button is clickable
   const allPlayersReady = partyStats.length > 0 && partyStats.every(p => p.is_ready);
 
   if (gameState === 'login') {
@@ -188,7 +186,6 @@ function App() {
         <h1>GAOL</h1>
         
         <div className="login-box">
-          
           <div className="toggle-bar">
              <button 
                className={`toggle-btn ${loginMode === 'join' ? 'active' : ''}`}
@@ -211,17 +208,18 @@ function App() {
 
           <div className="form-row">
             <label className="login-label">Room Code</label>
-            <input placeholder="e.g. 1987" onChange={e => setRoom(e.target.value)} />
+            <input 
+                placeholder="e.g. 1987" 
+                value={room} 
+                onChange={e => setRoom(e.target.value)} 
+            />
           </div>
 
           {loginMode === 'create' && (
             <>
               <div className="form-row">
                 <label className="login-label">World</label>
-                <select 
-                  onChange={e => setSelectedWorld(e.target.value)} 
-                  value={selectedWorld}
-                >
+                <select onChange={e => setSelectedWorld(e.target.value)} value={selectedWorld}>
                   {availableWorlds.map(w => (
                       <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
@@ -233,19 +231,12 @@ function App() {
                  <>
                    <div className="form-row">
                      <label className="login-label">New World Name</label>
-                     <input 
-                        placeholder="e.g. Middle Earth" 
-                        onChange={e => setNewWorldName(e.target.value)} 
-                     />
+                     <input placeholder="e.g. Middle Earth" onChange={e => setNewWorldName(e.target.value)} />
                    </div>
                    <div className="form-row">
                     <label className="login-label">Setting</label>
-                    <input 
-                      placeholder="e.g. High Fantasy" 
-                      onChange={e => setSetting(e.target.value)} 
-                    />
+                    <input placeholder="e.g. High Fantasy" onChange={e => setSetting(e.target.value)} />
                   </div>
-                  
                   <div className="form-row">
                     <label className="login-label">Realism</label>
                     <select onChange={e => setRealism(e.target.value)} value={realism}>
@@ -269,6 +260,41 @@ function App() {
           <div style={{color:'red', marginTop:'10px', fontSize:'0.8rem', textAlign:'center'}}>
             {statusMsg !== 'System Ready...' ? statusMsg : ''}
           </div>
+
+          {/* New Active Rooms Table */}
+          {loginMode === 'join' && activeRooms.length > 0 && (
+              <div className="room-list-container">
+                  <h3>Available Rooms</h3>
+                  <table className="room-table">
+                      <thead>
+                          <tr>
+                              <th>ID</th>
+                              <th>World</th>
+                              <th>#</th>
+                              <th>Action</th>
+                          </tr>
+                      </thead>
+                      <tbody>
+                          {activeRooms.map(r => (
+                              <tr key={r.id}>
+                                  <td style={{color: 'var(--accent-gold)'}}>{r.id}</td>
+                                  <td>{r.world}</td>
+                                  <td>{r.player_count}/6</td>
+                                  <td style={{textAlign:'right'}}>
+                                      <button 
+                                          className="join-sm-btn"
+                                          onClick={() => handleQuickJoin(r.id)}
+                                      >
+                                          JOIN
+                                      </button>
+                                  </td>
+                              </tr>
+                          ))}
+                      </tbody>
+                  </table>
+              </div>
+          )}
+
         </div>
       </div>
     );
@@ -276,18 +302,13 @@ function App() {
 
   return (
     <div className="main-layout">
-      
-      {/* Left side, submission box, chat log, and ticker */}
+      {/* Left side */}
       <div className="left-panel">
-        
-        {/* Top Ticker - added check for thinking status */}
         <div className={`status-ticker ${statusMsg.includes('THINKING') ? 'thinking' : ''}`}>
            STATUS: {statusMsg} | WORLD: {currentWorldName}
         </div>
 
-        {/* Chat Log */}
         <div className="chat-window">
-            {/* Embark button appears only for Admin, before messages exist (game start) */}
             {messages.length === 0 && isAdmin && (
                 <div className="embark-overlay">
                     <button 
@@ -301,7 +322,6 @@ function App() {
                 </div>
             )}
             
-            {/* If not admin and waiting, show message */}
             {messages.length === 0 && !isAdmin && (
                 <div className="embark-overlay">
                     <div style={{color:'#666', fontStyle:'italic'}}>
@@ -324,7 +344,6 @@ function App() {
           <div ref={chatEndRef} />
         </div>
 
-        {/* Bottom Input */}
         <div className="input-area">
           <span className="prompt-arrow">{'>'}</span>
           <input 
@@ -332,23 +351,23 @@ function App() {
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendAction()}
             placeholder="Describe your action..."
-            disabled={messages.length === 0} // Disable chat until game starts
+            disabled={messages.length === 0} 
           />
         </div>
       </div>
 
-      {/* Party Grid and Character Sheet */}
+      {/* Right side */}
       <div className="right-panel">
-        
-        {/* Party Grid */}
         <div className="party-grid">
           {partyStats.map((p, i) => (
-            <div key={i} className="mini-card">
+            <div 
+                key={i} 
+                className={`mini-card ${p.name === selectedPlayer ? 'selected' : ''}`}
+                onClick={() => { setSelectedPlayer(p.name); setActiveTab('character'); }}
+            >
               <div className="mini-name">#{i+1} {p.name}</div>
               <div className="mini-stat">HP: {p.hp}</div>
               <div className="mini-stat">{p.status}</div>
-              {/* Show Ready if they have Acted (Turn) or are Ready (Lobby) */}
-              {/* Only show Lobby Ready if NO messages (game hasn't started) */}
               {((messages.length === 0 && p.is_ready) || (messages.length > 0 && p.has_acted)) && (
                   <div className="ready-indicator">READY</div>
               )}
@@ -361,9 +380,7 @@ function App() {
           ))}
         </div>
 
-        {/* Detail View with Tabs */}
         <div className="detail-view">
-          
           <div className="tab-bar">
              <button 
                className={`tab-btn ${activeTab === 'character' ? 'active' : ''}`}
@@ -380,14 +397,13 @@ function App() {
           </div>
 
           {activeTab === 'character' ? (
-              // CHARACTER SHEET
               <>
                 <div className="detail-row">
                     <div className="detail-header">
-                        <h2>{myStats.name}</h2>
+                        <h2>{displayedPlayer.name}</h2>
                         <div className="detail-stats">
-                            <div>Health: {myStats.hp} / 100</div>
-                            <div>Status: {myStats.status}</div>
+                            <div>Health: {displayedPlayer.hp} / 100</div>
+                            <div>Status: {displayedPlayer.status}</div>
                         </div>
                     </div>
                     <div className="portrait-small">
@@ -395,80 +411,72 @@ function App() {
                     </div>
                 </div>
                 
-                {/* Two Column Layout */}
                 <div className="sheet-columns">
-                    
-                    {/* LEFT: Description (AI Updates) */}
                     <div className="sheet-left">
-                        {/* CHANGED LABEL BELOW */}
                         <label style={{fontSize:'0.7rem', color:'#666', marginBottom:'5px'}}>CHARACTER SUMMARY</label>
                         <textarea 
                             style={{flexGrow:1, resize:'none'}}
                             placeholder="Briefly describe your character..." 
-                            value={userDescription}
-                            onChange={e => setUserDescription(e.target.value)}
-                            disabled={isReady} 
+                            value={isOwnSheet ? userDescription : (displayedPlayer.description || '')}
+                            onChange={e => isOwnSheet && setUserDescription(e.target.value)}
+                            disabled={!isOwnSheet || (isOwnSheet && isReady)} 
                         />
                     </div>
-
-                    {/* RIGHT: User Entries */}
                     <div className="sheet-right">
-                        
-                        {/* TAGS INPUT */}
                         <div style={{marginBottom: '10px'}}>
                             <div style={{display:'flex', justifyContent:'space-between'}}>
                                 <label style={{fontSize:'0.7rem', color:'#666'}}>TAGS</label>
-                                <span className="input-instruction">Max 5</span>
+                                <span className="input-instruction">{isOwnSheet ? "Max 5" : ""}</span>
                             </div>
                             <input 
                                 className="sheet-input"
                                 placeholder="e.g. Human, Warrior, Strong" 
-                                value={tagsInput}
-                                onChange={e => setTagsInput(e.target.value)}
-                                disabled={isReady} 
+                                value={isOwnSheet ? tagsInput : (displayedPlayer.tags ? displayedPlayer.tags.join(', ') : '')}
+                                onChange={e => isOwnSheet && setTagsInput(e.target.value)}
+                                disabled={!isOwnSheet || (isOwnSheet && isReady)} 
                             />
                         </div>
-
-                        {/* AMBITION INPUT */}
                         <div style={{marginBottom: '10px'}}>
                             <label style={{fontSize:'0.7rem', color:'#666'}}>AMBITION</label>
                             <input 
                                 className="sheet-input"
                                 placeholder="e.g. Become King" 
-                                value={ambitionInput}
-                                onChange={e => setAmbitionInput(e.target.value)}
-                                disabled={isReady} 
+                                value={isOwnSheet ? ambitionInput : (displayedPlayer.ambition || '')}
+                                onChange={e => isOwnSheet && setAmbitionInput(e.target.value)}
+                                disabled={!isOwnSheet || (isOwnSheet && isReady)} 
                             />
                         </div>
-
-                        {/* SECRET INPUT */}
                         <div style={{flexGrow: 1, display:'flex', flexDirection:'column', marginBottom:'10px'}}>
                             <label style={{fontSize:'0.7rem', color:'#666'}}>SECRET</label>
-                            <textarea 
-                                style={{flexGrow:1, background:'#000', border:'1px solid #333', color:'var(--text-main)', padding:'8px', outline:'none', resize:'none', fontSize:'0.9rem'}}
-                                placeholder="Hidden info..." 
-                                value={secretInput}
-                                onChange={e => setSecretInput(e.target.value)}
-                                disabled={isReady} 
-                            />
+                            {isOwnSheet ? (
+                                <textarea 
+                                    style={{flexGrow:1, background:'#000', border:'1px solid #333', color:'var(--text-main)', padding:'8px', outline:'none', resize:'none', fontSize:'0.9rem'}}
+                                    placeholder="Hidden info..." 
+                                    value={secretInput}
+                                    onChange={e => setSecretInput(e.target.value)}
+                                    disabled={isReady} 
+                                />
+                            ) : (
+                                <div className="secret-mask">
+                                    What secrets may {displayedPlayer.name} hold?
+                                </div>
+                            )}
                         </div>
-
-                        {/* READY BUTTON */}
-                        {!isReady ? (
-                            <button className="ready-btn" onClick={handleReady} style={{width:'100%', padding:'10px'}}>
-                                CONFIRM & READY
-                            </button>
-                        ) : (
-                            <div style={{textAlign:'center', color:'var(--terminal-green)', border:'1px solid var(--terminal-green)', padding:'5px', fontSize:'0.8rem', fontWeight:'bold'}}>
-                                LOCKED IN
-                            </div>
+                        {isOwnSheet && (
+                            !isReady ? (
+                                <button className="ready-btn" onClick={handleReady} style={{width:'100%', padding:'10px'}}>
+                                    CONFIRM & READY
+                                </button>
+                            ) : (
+                                <div style={{textAlign:'center', color:'var(--terminal-green)', border:'1px solid var(--terminal-green)', padding:'5px', fontSize:'0.8rem', fontWeight:'bold'}}>
+                                    LOCKED IN
+                                </div>
+                            )
                         )}
-
                     </div>
                 </div>
               </>
           ) : (
-              // WORLD SHEET
               <div className="world-sheet">
                  {worldData ? (
                      <>
@@ -499,9 +507,7 @@ function App() {
                  )}
               </div>
           )}
-
         </div>
-
       </div>
     </div>
   );

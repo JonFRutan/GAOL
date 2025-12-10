@@ -480,6 +480,24 @@ def on_join(data):
     ]
     emit('game_state_update', game_state_export, room=room)
 
+@socketio.on('get_rooms')
+def handle_get_rooms():
+    # Compile a list of active rooms
+    room_data = []
+    for g in games.values():
+        world_name = "Unknown"
+        if g.world_id and g.world_id in worlds:
+            world_name = worlds[g.world_id].name
+            
+        room_data.append({
+            'id': g.room_id,
+            'world': world_name,
+            'setting': g.setting,
+            'player_count': len(g.players),
+            'is_started': g.is_started
+        })
+    emit('room_list', room_data)
+    
 #handle when a player disconnects
 @socketio.on('disconnect')
 def on_disconnect():
