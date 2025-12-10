@@ -52,7 +52,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  width: 500px;
+  width: 700px;
   background: var(--panel-bg);
   border: 2px solid var(--accent-dim);
   padding: 40px;

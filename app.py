@@ -20,8 +20,7 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 #Gemini API
-DEFAULT_API_KEY = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=DEFAULT_API_KEY)
+#Removed default key loading to enforce user-provided keys
 model = genai.GenerativeModel('gemini-2.5-flash')
 #temp game storage
 # {'room_id': GameRoom Object}
@@ -263,18 +262,19 @@ def generate_ai_response(game_room, is_embark=False):
     
     try:
         #try seeing an an override API key is available
-        active_key = DEFAULT_API_KEY
-        if game_room.custom_api_key and len(game_room.custom_api_key) == 39: #Gemini API keys are 39 characters long
-            active_key = game_room.custom_api_key
-        genai.configure(api_key=active_key) #update the api_key with the override
+        #Strictly require a key. No fallback.
+        if not game_room.custom_api_key or len(game_room.custom_api_key) < 10:
+             return {"story_text": "CRITICAL ERROR: No Gemini API Key provided. You must initialize a room with a valid API Key.", "updates": {}, "world_updates": []}
+             
+        genai.configure(api_key=game_room.custom_api_key) #update the api_key with the override
 
         response = model.generate_content(prompt, generation_config=generation_config) #generate response
 
         return json.loads(response.text) # Parse JSON string to Python Dict
     except Exception as e:
         print(f"AI Error: {e}")
-        genai.configure(api_key=DEFAULT_API_KEY) #if an error happens, fallback on the default key
-        return {"story_text": "GAOL has gone silent...", "updates": {}, "world_updates": []}
+        # Return error directly to user instead of silent fallback
+        return {"story_text": "Gaol has gone silent...", "updates": {}, "world_updates": []}
 
 #extracted turn processing so it can be triggered by disconnects or actions
 def process_turn(room_id):

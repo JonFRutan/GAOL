@@ -34,7 +34,7 @@ function App() {
   const [selectedWorld, setSelectedWorld] = useState('');
   const [newWorldName, setNewWorldName] = useState('');
   const [availableWorlds, setAvailableWorlds] = useState([]);
-  // UPDATED: State for Custom API Key
+
   const [customApiKey, setCustomApiKey] = useState('');
 
   const [messages, setMessages] = useState([]);
@@ -46,6 +46,13 @@ function App() {
   const [activeTab, setActiveTab] = useState('character'); 
 
   const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    const savedKey = localStorage.getItem('gaol_api_key');
+    if (savedKey) {
+        setCustomApiKey(savedKey);
+    }
+  }, []);
 
   useEffect(() => {
     socket.on('message', (data) => setMessages((prev) => [...prev, data]));
@@ -133,6 +140,9 @@ function App() {
 
   const handleCreate = () => {
     if (username && room) {
+      if (customApiKey && customApiKey.trim().length > 0) {
+        localStorage.setItem('gaol_api_key', customApiKey);
+      }
       const finalWorldSelection = selectedWorld || 'NEW';
       socket.emit('create_room', {
         username,
@@ -141,7 +151,7 @@ function App() {
         realism,
         world_selection: finalWorldSelection,
         new_world_name: newWorldName,
-        custom_api_key: customApiKey // UPDATED: Send Custom Key
+        custom_api_key: customApiKey
       });
       setSelectedPlayer(username);
     }
@@ -253,7 +263,8 @@ function App() {
                   Gemini API Key
                 </label>
                 <input 
-                    placeholder="Optional" 
+                    placeholder="Optional (Saved locally)" 
+                    value={customApiKey} // Bind value to state
                     onChange={e => setCustomApiKey(e.target.value)}
                     type="password"
                 />
