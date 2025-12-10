@@ -262,7 +262,7 @@ def generate_ai_response(game_room, is_embark=False):
         return json.loads(response.text) # Parse JSON string to Python Dict
     except Exception as e:
         print(f"AI Error: {e}")
-        return {"story_text": "The matrix glitches...", "updates": {}, "world_updates": []}
+        return {"story_text": "GAOL has gone silent...", "updates": {}, "world_updates": []}
 
 #extracted turn processing so it can be triggered by disconnects or actions
 def process_turn(room_id):
