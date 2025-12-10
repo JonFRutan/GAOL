@@ -40,6 +40,7 @@ function App() {
   const [newWorldName, setNewWorldName] = useState('');
   const [availableWorlds, setAvailableWorlds] = useState([]);
 
+  // things relevant to players
   const [messages, setMessages] = useState([]);
   const [partyStats, setPartyStats] = useState([]);
   const [inputValue, setInputValue] = useState('');
@@ -61,7 +62,6 @@ function App() {
         else setSelectedWorld('NEW');
     });
 
-    // New: Listen for room list updates
     socket.on('room_list', (data) => {
         setActiveRooms(data);
     });
@@ -79,7 +79,7 @@ function App() {
 
     // Fetch initial data
     socket.emit('get_worlds');
-    socket.emit('get_rooms'); // <--- Ask for rooms on load
+    socket.emit('get_rooms');
 
     return () => { 
       socket.off('message'); 
@@ -126,7 +126,7 @@ function App() {
     }
   };
 
-  // New: Handle Quick Join from Table
+  // quick join from the room table
   const handleQuickJoin = (targetRoomId) => {
       if(!username.trim()) {
           setStatusMsg("ERROR: Enter a username first.");
@@ -265,7 +265,7 @@ function App() {
             {statusMsg !== 'System Ready...' ? statusMsg : ''}
           </div>
 
-          {/* New Active Rooms Table */}
+          {/* Active Rooms Table */}
           {loginMode === 'join' && activeRooms.length > 0 && (
               <div className="room-list-container">
                   <h3>Available Rooms</h3>
@@ -357,7 +357,7 @@ function App() {
             placeholder="Describe your action..."
             disabled={messages.length === 0} 
           />
-          {/* New Dice Section */}
+          {/* Dice */}
           <div className="dice-display">
               <div className="dice-label">D20</div>
               <div className={`dice-value ${lastRoll === 20 ? 'crit-success' : lastRoll === 1 ? 'crit-fail' : ''}`}>
@@ -373,7 +373,7 @@ function App() {
           {partyStats.map((p, i) => (
             <div 
                 key={i} 
-                className={`mini-card ${p.name === selectedPlayer ? 'selected' : ''}`}
+                className={`mini-card ${p.name === selectedPlayer ? 'selected' : ''} ${p.name === username ? 'own-player' : ''}`}
                 onClick={() => { setSelectedPlayer(p.name); setActiveTab('character'); }}
             >
               <div className="mini-name">#{i+1} {p.name}</div>

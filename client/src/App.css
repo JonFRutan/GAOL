@@ -23,7 +23,6 @@ body {
 
 /* login screen */
 .login-container {
-  /* fixed position ensures it covers the screen regardless of parent flex rules */
   position: fixed; 
   top: 0;
   left: 0;
@@ -40,10 +39,9 @@ body {
 }
 
 .login-container h1 {
-  /* updated title styling */
   font-size: 4rem;
   letter-spacing: 10px;
-  border-bottom: none; /* removed underline */
+  border-bottom: none;
   margin-bottom: 30px;
   text-transform: uppercase;
   font-weight: 700;
@@ -91,7 +89,6 @@ body {
   border-bottom: 2px solid var(--accent-gold);
 }
 
-/* new container for side-by-side label and input */
 .form-row {
   display: flex;
   justify-content: space-between;
@@ -150,13 +147,13 @@ button {
 /* primary layout*/
 .main-layout {
   display: grid;
-  grid-template-columns: 2fr 1fr; /* Left (Chat) vs Right (Stats) */
+  grid-template-columns: 2fr 1fr;
   height: 100vh;
   width: 100vw;
   border-top: 2px solid var(--accent-dim);
 }
 
-/* left panel - interactable */
+/* left panel*/
 .left-panel {
   display: flex;
   flex-direction: column;
@@ -177,7 +174,7 @@ button {
   transition: all 0.3s;
 }
 
-/* pulsing effect when AI is thinking */
+/* pulsing effect when GAOL is thinking */
 .status-ticker.thinking {
     background-color: var(--terminal-green);
     color: #000;
@@ -268,7 +265,7 @@ button {
 .player-msg .msg-body { color: #eee; }
 .player-name { color: var(--terminal-green); font-weight: bold; }
 
-/* GOAL messages are in gold */
+/* GAOL messages are in gold */
 .gaol-msg { border-left-color: var(--accent-gold); }
 .gaol-msg .msg-header { color: var(--accent-gold); font-weight: bold; }
 .gaol-msg .msg-body { color: var(--accent-gold); font-style: italic; }
@@ -304,13 +301,13 @@ button {
   display: flex;
   flex-direction: column;
   background-color: #111;
-  height: 100vh; /* Ensure full height */
-  overflow: hidden; /* Prevent scrolling on the panel itself */
+  height: 100vh; 
+  overflow: hidden; 
 }
 
-/* Party Grid - UPDATED SIZE */
+/* Party Grid */
 .party-grid {
-  flex: 0 0 280px; /* Fixed height ~30vh, preventing resize */
+  flex: 0 0 280px; 
   flex-shrink: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -333,16 +330,23 @@ button {
   cursor: pointer; /* Clickable */
 }
 
-/* New: Hover state */
+/* Hover state */
 .mini-card:hover {
   border-color: #fff;
 }
 
-/* New: Selected state */
+/* Selected state (viewing) */
 .mini-card.selected {
   border: 2px solid var(--accent-gold);
   background: #111;
   box-shadow: 0 0 10px rgba(255, 193, 7, 0.1);
+}
+
+/* IT'S ME */
+.mini-card.own-player .mini-name {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
 }
 
 .mini-name { 
@@ -358,12 +362,14 @@ button {
 .ready-indicator {
     position: absolute;
     bottom: 5px;
+    right: 5px; /* Moved to bottom right corner */
     background: var(--terminal-green);
     color: #000;
     font-size: 0.7rem;
     padding: 2px 6px;
     font-weight: bold;
     border-radius: 2px;
+    z-index: 5;
 }
 
 /* Empty Slots */
@@ -374,7 +380,7 @@ button {
 }
 .empty-slot { color: #333; font-size: 0.8rem; }
 
-/* Detail View - UPDATED TO FILL REMAINING SPACE */
+/* Detail View */
 .detail-view {
   flex: 1; /* Takes all remaining space */
   padding: 20px;
@@ -453,7 +459,7 @@ button {
   margin-left: 20px;
 }
 
-/* New 2-column layout */
+/* 2-column layout */
 .sheet-columns {
     display: flex;
     gap: 20px;
@@ -528,7 +534,7 @@ button {
     font-size: 0.8rem;
 }
 
-/* World Sheet Styles - UPDATED FOR SCROLLING */
+/* World Sheet Styles */
 .world-sheet {
     display: flex;
     flex-direction: column;
@@ -684,20 +690,17 @@ button {
     font-style: italic;
 }
 
-/* Updated Input Area Layout */
 .input-area {
-    /* ... existing props ... */
-    padding-right: 0; /* Remove right padding so dice sits flush if desired */
+    padding-right: 0;
     display: flex;
-    align-items: stretch; /* Stretch children to fill height */
+    align-items: stretch;
 }
 
 .input-area input {
-    /* ... existing props ... */
-    flex-grow: 1; /* Input takes all remaining space */
+    flex-grow: 1;
 }
 
-/* Dice Display Section */
+/* Dice Display */
 .dice-display {
     width: 80px;
     border-left: 1px solid var(--accent-dim);
@@ -706,7 +709,7 @@ button {
     justify-content: center;
     align-items: center;
     background: #0a0a0a;
-    margin: -15px -15px -15px 10px; /* Negate padding of parent to fill height */
+    margin: -15px -15px -15px 10px;
     padding: 0 10px;
 }
 
