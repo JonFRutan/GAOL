@@ -148,7 +148,7 @@ class GameRoom:
         actions = []
         for p in self.players.values():
             action_str = p.current_action if p.current_action else "No action taken."
-            roll_info = f"Rolled: {p.current_roll/20}" if p.current_roll else "(No Roll)"
+            roll_info = f"Rolled: {p.current_roll}" if p.current_roll else "(No Roll)"
             actions.append(f"- {p.username} {roll_info} attempts to: {action_str}")
         return "\n".join(actions)
 
@@ -256,7 +256,7 @@ def generate_ai_response(game_room, is_embark=False):
     
     INSTRUCTIONS:
     1. Narrate the outcome of their actions dramatically (max 4 sentences).
-    2. PAY ATTENTION TO DICE ROLLS: 1 is a Critical Failure (disaster), 20 is a Critical Success (miracle), 10 is average. 
+    2. PAY ATTENTION TO DICE ROLLS: 1 is a Critical Failure (disaster), 20 is a Critical Success (miracle), 10 is average.
     3. Update player stats if they took damage or used items.
     4. You can update a player's Tags (e.g., if they mutate) or Ambition (if it changes).
     5. You can update a player's Description (e.g. if they are scarred or change appearance).
