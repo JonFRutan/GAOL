@@ -38,7 +38,10 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 games = {}
 
 #file path for persistent world storage
-WORLDS_FILE = 'worlds.json'
+# Get the absolute path of the directory where app.py is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Force Python to look for worlds.json in that specific directory
+WORLDS_FILE = os.path.join(BASE_DIR, 'worlds.json')
 
 #new global world storage
 # {'world_id': World Object}
@@ -721,6 +724,14 @@ def handle_action(data):
         emit('status', {'msg': f'Waiting for {pending_count} player(s)...'}, room=room)
     else:
         process_turn(room)
+
+load_worlds()
+
+# Seed a default world if empty
+if not worlds:
+    default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
+    worlds[default_world.id] = default_world
+    save_worlds()
 
 if __name__ == "__main__":
     load_worlds() # load json on startup
