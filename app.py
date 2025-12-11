@@ -232,8 +232,11 @@ def generate_ai_response(game_room, is_embark=False):
         world_history = "\n".join([f"- {e}" for e in w.major_events])
 
     #set up message history to keep storyteller on track
+    relevant_history = [m for m in game_room.history if isinstance(m, dict) and m.get('type') == 'story']
+    recent_history = relevant_history[-15:]
+
     history_text = ""
-    for msg in game_room.history:
+    for msg in recent_history:
         if isinstance(msg, dict):
             #we skip system/hidden messages in the prompt history to save tokens
             if msg.get('type') == 'story': 
@@ -308,6 +311,13 @@ def generate_ai_response(game_room, is_embark=False):
         genai.configure(api_key=active_key) #update the api_key
 
         response = model.generate_content(prompt, generation_config=generation_config) #generate response
+
+        if response.usage_metadata:
+            input_tokens = response.usage_metadata.prompt_token_count
+            output_tokens = response.usage_metadata.candidates_token_count
+            total_tokens = response.usage_metadata.total_token_count
+            print(f"[PROMPT INPUT TOKENS] - {input_tokens} | [RESPONSE OUTPUT TOKENS] - {output_tokens} | [TOTAL TOKEN USAGE] - {total_tokens}")
+            print(f"[TOKEN AUDIT] % of Minute Limit: {(input_tokens / 1000000) * 100:.4f}%") # based on 1M TPM limit
 
         return json.loads(response.text) #parse JSON string to Python Dict
     except Exception as e:
