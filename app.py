@@ -61,9 +61,9 @@ generation_config = {
     "response_mime_type": "application/json",
 }
 
-##############################
-#           Classes          #
-##############################
+########################################################################
+#                            Data Classes                              #
+########################################################################
 
 #storing persistent world data, major events, setting, description, etc.
 class World:
@@ -213,9 +213,25 @@ class GameRoom:
             if p.secret:
                 status_lines.append(f"   - SECRET (Only known to you and player): {p.secret}")
         return "\n".join(status_lines)
+    
+    def to_dict(self):
+        player_list = [p.username for p in self.players.values()]
+        return {
+            'room_id': self.room_id,
+            'setting': self.setting,
+            'realism': self.realism,
+            'world_id': self.world_id,
+            'is_started': self.is_started,
+            'active_players': player_list,
+            'history': self.history
+        }
+
+########################################################################
+#                          Helper Functions                            #
+########################################################################
 
 ##############################
-#      Helper Functions      #
+#      Loader Functions      #
 ##############################
 
 #load worlds from json file on startup
@@ -240,6 +256,10 @@ def load_worlds():
     except Exception as e:
         print(f"Error loading worlds: {e}")
 
+##############################
+#       Saver Functions      #
+##############################
+
 #save worlds to json file
 def save_worlds():
     try:
@@ -248,6 +268,47 @@ def save_worlds():
             json.dump(data, f, indent=2)
     except Exception as e:
         print(f"Error saving worlds: {e}")
+
+def save_rooms():
+    try:
+        data = {r_id: r.to_dict() for r_id, r in games.items()}
+        with open(ROOMS_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving rooms: {e}")
+
+def save_players():
+    #flattens all players from all games into one dictionary keyed by "RoomID_Username"
+    try:
+        all_players = {}
+        for r_id, game in games.items():
+            for p in game.players.values():
+                unique_key = f"{r_id}_{p.username}"
+                player_data = p.to_dict()
+                player_data['room_ref'] = r_id # add reference to room
+                all_players[unique_key] = player_data
+        
+        with open(PLAYERS_FILE, 'w') as f:
+            json.dump(all_players, f, indent=2)
+    except Exception as e:
+        print(f"Error saving players: {e}")
+
+def save_characters():
+    #placeholder: currently we don't have a global character store, but this sets up the file
+    try:
+        #if we had a characters dict: data = {c.id: c.to_dict() for c in characters.values()}
+        data = {} 
+        with open(CHARACTERS_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"Error saving characters: {e}")
+
+# Master save function to trigger all saves
+def save_all_data():
+    save_worlds()
+    save_rooms()
+    save_players()
+    save_characters()
 
 def generate_ai_response(game_room, is_embark=False):
     #fetching world context for prompt
@@ -408,6 +469,9 @@ def process_turn(room_id):
     
     #reset everyones turns
     game.reset_turns()
+
+    save_rooms()
+    save_players()
     
     #status back to waiting for move
     emit('status', {'msg': 'GAOL awaits your move...'}, room=room_id)
@@ -428,6 +492,10 @@ def process_turn(room_id):
         for p in game.players.values()
     ]
     emit('game_state_update', game_state_export, room=room_id)
+
+########################################################################
+#                         Server Handlers                              #
+########################################################################
 
 ##############################
 #         API Routes         #
@@ -506,6 +574,9 @@ def handle_create_room(data):
 
     games[room_id] = GameRoom(room_id, final_setting, final_realism, final_world_id, custom_api_key)
     
+    #save the room after it's been created
+    save_rooms()
+
     #manually trigger join logic for the creator
     #using a helper function logic here would be cleaner but keeping inline for now
     on_join({'username': username, 'room': room_id})
@@ -541,6 +612,9 @@ def on_join(data):
         is_admin = True
 
     game.add_player(sid, username)
+
+    save_players()
+    save_rooms()
 
     #hot-join player logic
     if game.is_started:
@@ -613,7 +687,11 @@ def on_disconnect():
             if len(game.players) == 0:
                 print(f"Deleting empty room: {room_id}")
                 del games[room_id]
+                save_rooms() #update the rooms json before clearing it's data
                 continue
+
+            save_players() #make a save of the players in the room
+            save_rooms()   #make a save of the rooms
             
             #push new state immediately to prevent ghost cards
             game_state_export = [
@@ -658,6 +736,8 @@ def handle_player_ready(data):
         player.ambition = ambition
         player.secret = secret
         player.is_ready = True
+
+        save_players() #save updated player data
         
         #emit updated state
         game_state_export = [
@@ -708,6 +788,8 @@ def handle_embark(data):
     game.history.append({'sender': 'Gaol', 'text': story_text, 'type': 'story'})
     emit('message', {'sender': 'Gaol', 'text': story_text}, room=room)
     
+    save_rooms() #save the room and begin saving history
+
     #game is officially on, set status
     emit('status', {'msg': 'GAOL awaits your move...'}, room=room)
     
