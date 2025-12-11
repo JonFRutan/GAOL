@@ -33,19 +33,24 @@ else:
     print("[SYSTEM] Server API Key Loaded: NO (User must provide key)")
 
 model = genai.GenerativeModel('gemini-2.5-flash')
-#temp game storage
-# {'room_id': GameRoom Object}
-games = {}
 
-#file path for persistent world storage
+#file path for persistent data storage
 #get the absolute path of the directory where app.py is located
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-#make sure the "world.json" file is there
-WORLDS_FILE = os.path.join(BASE_DIR, 'worlds.json')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+
+
+WORLDS_FILE = os.path.join(DATA_DIR, 'worlds.json')
+ROOMS_FILE = os.path.join(DATA_DIR, 'rooms.json')
+PLAYERS_FILE = os.path.join(DATA_DIR, 'players.json')
+CHARACTERS_FILE = os.path.join(DATA_DIR, 'characters.json')
 
 #new global world storage
 # {'world_id': World Object}
 worlds = {} 
+#temp game storage
+# {'room_id': GameRoom Object}
+games = {}
 
 #gemini configurations
 generation_config = {
@@ -62,7 +67,6 @@ generation_config = {
 
 #storing persistent world data, major events, setting, description, etc.
 class World:
-    #updated to store setting and realism as persistent world data
     def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm."):
         self.id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))   #randomly generated ID to distinguish the world
         self.name = name                                                                 #name of the world (e.g. Middle Earth)
@@ -114,14 +118,38 @@ class Player:
     #__repr__ indicates the official string represetnation of an object.
     def __repr__(self):
         return f"{self.username} [HP:{self.hp}] ({self.status})"
+    
+    def to_dict(self):
+        return {
+            'username': self.username,
+            'hp': self.hp,
+            'status': self.status,
+            'inventory': self.inventory,
+            'description': self.description,
+            'tags' : self.tags,
+            'ambition': self.ambition,
+            'secret' : self.secret 
+            #NOTE: we don't save SID or current_action/roll since they are session specific
+            }
 
-#FIXME: Stub class
-#this class should eventually hold important characters to the world
-#perhaps even faction/affiliations?
+#store important persistent characters to the world
 class Character:
-    def __init__(self):
-        pass
-
+    def __init__(self, name, description, role="NPC", affiliation=None):
+        self.id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))  #unique ID of the characte
+        self.name = name                                                                #name of the character
+        self.description = description                                                  #description of the character
+        self.role = role                                                                #e.g. villain, tavern keeper, etc    
+        self.affiliation = affiliation                                                  #faction / group affiliation e.g. Occultists          
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description' : self.description,
+            'role' : self.role,
+            'affiliation': self.affiliation
+        }
+    
 #NOTE: It would be cool store a bunch more classes of information such as "Faction", "Landmarks", "Cities" etc.
 #my concern is of course token sizing in our prompting, perhaps there is a way we can run an algorithm / function to determine relevant information to feed the prompt first?
 
