@@ -144,6 +144,73 @@ button {
 }
 .action-btn:hover { background: #ffdb60; }
 
+/* Login Footer */
+.login-footer {
+    position: absolute;
+    bottom: 30px;
+    display: flex;
+    gap: 30px;
+}
+
+.footer-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #333;
+    color: #555;
+    font-size: 0.9rem;
+    font-weight: bold;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding-bottom: 5px;
+    transition: all 0.2s;
+}
+
+.footer-btn:hover {
+    color: var(--accent-gold);
+    border-color: var(--accent-gold);
+}
+
+/* About Modal */
+.about-modal-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 200;
+}
+
+.about-modal-box {
+    width: 500px;
+    background: #0a0a0a;
+    border: 2px solid var(--accent-gold);
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 0 30px rgba(255, 193, 7, 0.2);
+}
+
+.about-modal-box h2 {
+    color: var(--accent-gold);
+    text-transform: uppercase;
+    margin-top: 0;
+    border-bottom: 1px solid var(--accent-dim);
+    width: 100%;
+    text-align: center;
+    padding-bottom: 15px;
+}
+
+.about-content {
+    text-align: center;
+    color: #ccc;
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
 /* primary layout*/
 .main-layout {
   display: grid;

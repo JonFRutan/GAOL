@@ -164,6 +164,7 @@ class GameRoom:
         self.history = []                       #list of strings or dicts
         self.players = {}                       #dict: { sid: Player }
         self.is_started = False                 #has the room started the gameplay loop yet?
+        self.admin_sid = None                   #track who the host is
 
     #add a player into the room.
     def add_player(self, sid, username):
@@ -610,6 +611,7 @@ def on_join(data):
     is_admin = False
     if len(game.players) == 0:
         is_admin = True
+        game.admin_sid = sid # Set the admin SID to the creator/first joiner
 
     game.add_player(sid, username)
 
@@ -679,6 +681,15 @@ def on_disconnect():
     for room_id, game in list(games.items()):
         game = games[room_id]
         if sid in game.players:
+            # Check if the disconnecting player is the host (admin)
+            if game.admin_sid == sid:
+                # Emit to all players in the room that the host left
+                emit('room_closed', {'msg': 'The host has left.'}, room=room_id)
+                print(f"Host left. Deleting room: {room_id}")
+                del games[room_id]
+                save_rooms()
+                return
+
             name = game.players[sid].username
             game.remove_player(sid)
             emit('status', {'msg': f'{name} disconnected.'}, room=room_id)

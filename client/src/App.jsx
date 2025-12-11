@@ -59,6 +59,9 @@ function App() {
   //toggles right panel view between character sheet and world info
   const [activeTab, setActiveTab] = useState('character'); 
 
+  //state for about modal
+  const [showAbout, setShowAbout] = useState(false);
+
   //ref used for auto-scrolling chat
   const chatEndRef = useRef(null);
 
@@ -106,6 +109,17 @@ function App() {
       setGameState('playing');
     });
 
+    //handle room closure by host
+    socket.on('room_closed', (data) => {
+        setGameState('login');
+        setRoom('');
+        setMessages([]);
+        setPartyStats([]);
+        setIsReady(false);
+        setIsAdmin(false);
+        setStatusMsg(data.msg);
+    });
+
     //updates world lore/events when ai triggers a change
     socket.on('world_update', (data) => setWorldData(data));
 
@@ -123,6 +137,7 @@ function App() {
       socket.off('room_list');
       socket.off('join_success');
       socket.off('world_update');
+      socket.off('room_closed');
     };
   }, []);
 
@@ -402,6 +417,28 @@ function App() {
           )}
 
         </div>
+
+        {/* Footer for About and Data */}
+        <div className="login-footer">
+             <button className="footer-btn" onClick={() => setShowAbout(true)}>ABOUT</button>
+             <button className="footer-btn" onClick={() => setStatusMsg("Data features coming soon...")}>DATA</button>
+        </div>
+
+        {/* About Modal */}
+        {showAbout && (
+             <div className="about-modal-overlay">
+                 <div className="about-modal-box">
+                      <h2>About GAOL</h2>
+                      <div className="about-content">
+                        <p>GAOL is a multiplayer AI storyteller experience.</p>
+                        <p>Inspired by <i>AI Dungeon</i> and <i>Death by AI</i>, I sought to recreate the multiplayer experience with a rich, evolving world.</p>
+                        <p>Create a room, define your setting, and embark on a collaborative storytelling journey with friends.</p>
+                        <p><a href="https://github.com/JonFRutan/GAOL">GitHub</a> || <a href="https://www.linkedin.com/in/jonathanrutan/">LinkedIn</a> || <a href="https://jfelix.space">jfelix</a></p>
+                      </div>
+                      <button className="join-sm-btn" style={{width: '100%', marginTop: '20px'}} onClick={() => setShowAbout(false)}>CLOSE</button>
+                 </div>
+             </div>
+        )}
       </div>
     );
   }
