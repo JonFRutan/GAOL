@@ -155,12 +155,13 @@ class Character:
 
 #stores information about the game room
 class GameRoom:
-    def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None, custom_api_key=None):
+    def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None, custom_api_key=None, password=None):
         self.room_id = room_id                  #unique ID of the room for people to join
         self.setting = setting                  #setting of the world the room is using
         self.realism = realism                  #how realistic should the room behave?
         self.world_id = world_id                #id of the loaded world
         self.custom_api_key = custom_api_key    #stores override api keys
+        self.password = password                #optional password for the room
         self.history = []                       #list of strings or dicts
         self.players = {}                       #dict: { sid: Player }
         self.is_started = False                 #has the room started the gameplay loop yet?
@@ -224,7 +225,8 @@ class GameRoom:
             'world_id': self.world_id,
             'is_started': self.is_started,
             'active_players': player_list,
-            'history': self.history
+            'history': self.history,
+            'is_private': bool(self.password) # flag if password is set
         }
 
 ########################################################################
@@ -532,6 +534,7 @@ def handle_create_room(data):
     world_selection = data.get('world_selection') 
     new_world_name = data.get('new_world_name')
     custom_api_key = data.get('custom_api_key')
+    password = data.get('password') # retrieve optional password
 
     if room_id in games:
         emit('status', {'msg': 'ERROR: Room ID already exists.'})
@@ -573,20 +576,21 @@ def handle_create_room(data):
             save_worlds() 
         final_world_id = list(worlds.keys())[0]
 
-    games[room_id] = GameRoom(room_id, final_setting, final_realism, final_world_id, custom_api_key)
+    games[room_id] = GameRoom(room_id, final_setting, final_realism, final_world_id, custom_api_key, password)
     
     #save the room after it's been created
     save_rooms()
 
     #manually trigger join logic for the creator
     #using a helper function logic here would be cleaner but keeping inline for now
-    on_join({'username': username, 'room': room_id})
+    on_join({'username': username, 'room': room_id, 'password': password})
 
 #someone joins a room
 @socketio.on('join')
 def on_join(data):
     username = data['username']
     room = data['room']
+    req_password = data.get('password') # get provided password if any
     sid = request.sid
     join_room(room)
     
@@ -596,6 +600,14 @@ def on_join(data):
         return
     
     game = games[room]
+    
+    # Password Protection Check
+    if game.password and len(game.password) > 0:
+        if game.password != req_password:
+            # Emit a specific event asking for password
+            emit('password_required', {'room': room}, room=sid)
+            return
+
     current_world = worlds[game.world_id]
 
     #check for duplicate username
@@ -670,7 +682,8 @@ def handle_get_rooms():
             'setting': g.setting,
             'player_count': len(g.players),
             'is_started': g.is_started,
-            'has_custom_key': bool(g.custom_api_key) #sends if the room has a custom API key
+            'has_custom_key': bool(g.custom_api_key), #sends if the room has a custom API key
+            'is_private': bool(g.password) # indicates if room is password protected
         })
     emit('room_list', room_data)
 

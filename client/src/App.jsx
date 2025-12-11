@@ -15,6 +15,11 @@ function App() {
   //basic user inputs for authentication
   const [username, setUsername] = useState('');
   const [room, setRoom] = useState('');
+  //Password states
+  const [createPassword, setCreatePassword] = useState('');
+  const [joinPassword, setJoinPassword] = useState('');
+  const [showPwdModal, setShowPwdModal] = useState(false);
+  const [pendingRoom, setPendingRoom] = useState(''); //stores room ID while waiting for password
   
   //list of available lobbies fetched from server
   const [activeRooms, setActiveRooms] = useState([]);
@@ -62,6 +67,9 @@ function App() {
   //state for about modal
   const [showAbout, setShowAbout] = useState(false);
 
+  //particles for embark explosion
+  const [particles, setParticles] = useState([]);
+
   //ref used for auto-scrolling chat
   const chatEndRef = useRef(null);
 
@@ -107,6 +115,8 @@ function App() {
       setIsAdmin(data.is_admin); 
       if(data.history && data.history.length > 0) setMessages(data.history);
       setGameState('playing');
+      setJoinPassword(''); // clear password on success
+      setShowPwdModal(false);
     });
 
     //handle room closure by host
@@ -123,6 +133,13 @@ function App() {
     //updates world lore/events when ai triggers a change
     socket.on('world_update', (data) => setWorldData(data));
 
+    //Password Requirement Trigger
+    socket.on('password_required', (data) => {
+        setPendingRoom(data.room);
+        setStatusMsg("Restricted Access: Password Required.");
+        setShowPwdModal(true);
+    });
+
     //request initial data on mount
     socket.emit('get_worlds');
     socket.emit('get_rooms');
@@ -138,6 +155,7 @@ function App() {
       socket.off('join_success');
       socket.off('world_update');
       socket.off('room_closed');
+      socket.off('password_required');
     };
   }, []);
 
@@ -180,6 +198,14 @@ function App() {
       socket.emit('join', { username, room });
       setSelectedPlayer(username);
     }
+  };
+
+  //Submit password from modal
+  const handlePasswordSubmit = () => {
+      if(pendingRoom && username) {
+          socket.emit('join', { username, room: pendingRoom, password: joinPassword });
+          // Note: we don't close modal here immediately, we wait for join_success or another error
+      }
   };
 
   //handles joining via the lobby list buttons
@@ -226,13 +252,37 @@ function App() {
       realism,
       world_selection: finalWorldSelection,
       new_world_name: newWorldName,
-      custom_api_key: customApiKey 
+      custom_api_key: customApiKey,
+      password: createPassword // Optional password
     });
     setSelectedPlayer(username);
   };
 
   //trigger for admin to start the game loop
-  const handleEmbark = () => {
+  const handleEmbark = (e) => {
+    // Generate particles
+    const rect = e.target.getBoundingClientRect();
+    const newParticles = [];
+    for (let i = 0; i < 30; i++) {
+        // Random angle and distance for explosion
+        const angle = Math.random() * Math.PI * 2;
+        const velocity = 50 + Math.random() * 100;
+        const tx = Math.cos(angle) * velocity + 'px';
+        const ty = Math.sin(angle) * velocity + 'px';
+        
+        newParticles.push({
+            id: Date.now() + i,
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+            tx,
+            ty
+        });
+    }
+    setParticles(newParticles);
+    
+    // Clear particles after animation
+    setTimeout(() => setParticles([]), 1000);
+
     socket.emit('embark', { room });
   };
 
@@ -338,6 +388,17 @@ function App() {
                   </div>
                  </>
               )}
+              
+              {/* Optional Password Field */}
+              <div className="form-row">
+                  <label className="login-label">Password (Optional)</label>
+                  <input 
+                    type="password"
+                    placeholder="Leave empty for public"
+                    value={createPassword}
+                    onChange={e => setCreatePassword(e.target.value)}
+                  />
+              </div>
 
               {/* Custom API Key Input */}
               <div className="form-row">
@@ -406,7 +467,7 @@ function App() {
                                           className="join-sm-btn"
                                           onClick={() => handleQuickJoin(r.id)}
                                       >
-                                          JOIN
+                                          {r.is_private ? "LOCKED" : "JOIN"}
                                       </button>
                                   </td>
                               </tr>
@@ -439,6 +500,31 @@ function App() {
                  </div>
              </div>
         )}
+
+        {/* Password Prompt Modal */}
+        {showPwdModal && (
+            <div className="about-modal-overlay">
+                <div className="about-modal-box">
+                    <h2>SECURE ROOM</h2>
+                    <p style={{color:'#888', marginBottom:'15px'}}>Room {pendingRoom} is password protected.</p>
+                    <input 
+                        type="password"
+                        placeholder="Enter Password"
+                        value={joinPassword}
+                        onChange={e => setJoinPassword(e.target.value)}
+                        style={{
+                            width: '100%', padding:'10px', background:'#000', 
+                            border:'1px solid var(--accent-gold)', color:'var(--accent-gold)',
+                            marginBottom: '20px', textAlign: 'center'
+                        }}
+                    />
+                    <div style={{display:'flex', width:'100%', gap:'10px'}}>
+                        <button className="join-sm-btn" style={{flex:1}} onClick={() => setShowPwdModal(false)}>CANCEL</button>
+                        <button className="action-btn" style={{flex:1, marginTop:0}} onClick={handlePasswordSubmit}>UNLOCK</button>
+                    </div>
+                </div>
+            </div>
+        )}
       </div>
     );
   }
@@ -446,6 +532,20 @@ function App() {
   //render logic for the main game interface
   return (
     <div className="main-layout">
+      {/* Particle Effect Layer */}
+      {particles.map(p => (
+          <div 
+             key={p.id} 
+             className="particle"
+             style={{
+                 left: p.x, 
+                 top: p.y, 
+                 '--tx': p.tx, 
+                 '--ty': p.ty 
+             }}
+          />
+      ))}
+
       {/* Left side: Chat, Input, Dice */}
       <div className="left-panel">
         <div className={`status-ticker ${statusMsg.includes('THINKING') ? 'thinking' : ''}`}>

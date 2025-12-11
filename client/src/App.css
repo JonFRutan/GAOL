@@ -171,7 +171,7 @@ button {
     border-color: var(--accent-gold);
 }
 
-/* About Modal */
+/* About Modal and Password Modal */
 .about-modal-overlay {
     position: absolute;
     top: 0; left: 0;
@@ -293,12 +293,35 @@ button {
     text-transform: uppercase;
     box-shadow: 0 0 20px rgba(0,255,65, 0.3);
     transition: all 0.2s;
+    position: relative;
 }
 
 .embark-btn:hover {
     background: #000;
     color: var(--terminal-green);
     box-shadow: 0 0 30px rgba(0,255,65, 0.6);
+}
+
+/* Particle Explosion Effects */
+.particle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  background-color: var(--terminal-green);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: explode 0.8s ease-out forwards;
+}
+
+@keyframes explode {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--tx), var(--ty)) scale(0);
+    opacity: 0;
+  }
 }
 
 /* Ready Button in Detail View */
