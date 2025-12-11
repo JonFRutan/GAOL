@@ -1,5 +1,5 @@
 #jfr
-import os, json, random, string, time
+import os, json, random, string, time, re
 import google.generativeai as genai
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
@@ -65,6 +65,25 @@ generation_config = {
 #                            Data Classes                              #
 ########################################################################
 
+#generic class for locations, cities, landmarks, etc.
+class WorldEntity:
+    def __init__(self, name, type_tag, description, keywords=[]):
+        self.id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        self.name = name
+        self.type_tag = type_tag # e.g. "Faction", "City", "NPC"
+        self.description = description
+        #keywords help the relevance engine find this without exact name matches
+        #e.g. for "Thieves Guild", keywords might be ["crime", "steal", "rogue"]
+        self.keywords = keywords 
+        
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "type": self.type_tag,
+            "description": self.description,
+            "keywords": self.keywords
+        }
+
 #storing persistent world data, major events, setting, description, etc.
 class World:
     def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm."):
@@ -74,12 +93,18 @@ class World:
         self.realism = realism                                                           #how realistic should the world behave? (High, Mid, Low) determines how wacky the world should behave
         self.description = description                                                   #description of the planet (THIS DOESN'T POPULATE OR DO ANYTHING AT THE MOMENT)
         self.major_events = []                                                           #a list of major world events that should remain persistent across playthroughs. (e.g. volcano covering planet with ash)
+        self.entities = []                                                               #list of WorldEntity objects
 
     #adds a new event to the major events of the planet
     def add_event(self, event_text):
         self.major_events.append(event_text)
         if len(self.major_events) > 20: 
             self.major_events.pop(0)
+        
+    #adding a new entity to the world.
+    def add_entity(self, name, type_tag, description, keywords=[]):
+        new_entity = WorldEntity(name, type_tag, description, keywords)
+        self.entities.append(new_entity)
     
     #helper to convert object to dict for json saving
     def to_dict(self):
@@ -89,7 +114,8 @@ class World:
             'setting': self.setting,
             'realism': self.realism,
             'description': self.description,
-            'major_events': self.major_events
+            'major_events': self.major_events,
+            'entities': [e.to_dict() for e in self.entities] # Save entities
         }
 
 #stores information about players
@@ -233,6 +259,88 @@ class GameRoom:
 #                          Helper Functions                            #
 ########################################################################
 
+# RelevanceEngine class
+# The purpose of this class is to allow for better scoping of context so that only relevant information is sent into the prompt
+# and to reduce unnecessary information from taking up token count in our prompting.
+class RelevanceEngine:
+    #stop words are common word that aren't relevant to our prompting, and removing them helps minimize prompt bloat and improve both efficiency and information relevancy.
+    STOP_WORDS = {
+        'the', 'is', 'at', 'which', 'on', 'a', 'an', 'and', 'or', 'but', 
+        'if', 'of', 'to', 'in', 'for', 'with', 'by', 'from', 'up', 'about', 
+        'into', 'over', 'after', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+        'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their'
+    }
+
+    #takes all the tokens submitted, cleans them, and removes stop words.
+    @staticmethod
+    def extract_keywords(text):
+        if not text: return set()
+        #clean and split text into tokens
+        tokens = re.findall(r'\b\w+\b', text.lower())                         #extracts just the words, letters, and characters (removing punctuation)
+        return {t for t in tokens if t not in RelevanceEngine.STOP_WORDS}     #removes all the stop words from the list of words
+
+    #
+    @staticmethod
+    def get_relevant_lore(world, history_buffer, current_actions, limit=5):
+        #creates search context out of recent history and the actions being taken
+        search_context = history_buffer + " " + current_actions
+        #distills that search context into relevant keywords for better searching
+        context_keywords = RelevanceEngine.extract_keywords(search_context)
+        
+        #scoring out items
+        #scores against major events and worldentites
+        scored_items = []
+        
+        #process Entities
+        for entity in world.entities:
+            score = 0
+            #check keywords in name
+            entity_words = RelevanceEngine.extract_keywords(entity.name)
+            score += len(entity_words.intersection(context_keywords)) * 2            #2x weight value (explicit names are high value)
+            
+            #check manual keywords
+            if entity.keywords:
+                kw_set = {k.lower() for k in entity.keywords}
+                score += len(kw_set.intersection(context_keywords))                  #1x weight value
+            
+            #check description (lower weight)
+            desc_words = RelevanceEngine.extract_keywords(entity.description)
+            score += len(desc_words.intersection(context_keywords)) * 0.5            #1/2 weight value
+
+            if score > 0:
+                scored_items.append({
+                    'text': f"[{entity.type_tag}] {entity.name}: {entity.description}",
+                    'score': score
+                })
+
+        #process major world events (factoring in a recency bias with keyword matching)
+        #since events are added sequentially, the further they are in the list the more recent they happened.
+        total_events = len(world.major_events)
+        for i, event in enumerate(world.major_events):
+            score = 0
+            event_words = RelevanceEngine.extract_keywords(event)
+            score += len(event_words.intersection(context_keywords))
+            
+            #recency bias (events at end of list get higher base score)
+            recency_score = (i / total_events) * 2 if total_events > 0 else 0
+            
+            final_score = score + recency_score
+            
+            #keep the most recent event in mind, even if it's not super relevant.
+            if i == total_events - 1:
+                final_score += 10 
+
+            scored_items.append({
+                'text': f"[History] {event}",
+                'score': final_score
+            })
+            
+        #sort the items by their score, and slice the most relevant scorings.
+        scored_items.sort(key=lambda x: x['score'], reverse=True)
+        top_items = scored_items[:limit]
+        
+        return "\n".join([item['text'] for item in top_items])
+
 ##############################
 #      Loader Functions      #
 ##############################
@@ -255,6 +363,17 @@ def load_worlds():
                 )
                 w.id = w_data['id'] #overwrite random id
                 w.major_events = w_data['major_events']
+                
+                #load entities if they exist
+                if 'entities' in w_data:
+                    for e_data in w_data['entities']:
+                        w.add_entity(
+                            e_data['name'], 
+                            e_data['type'], 
+                            e_data['description'], 
+                            e_data.get('keywords', [])
+                        )
+                
                 worlds[w_id] = w
     except Exception as e:
         print(f"Error loading worlds: {e}")
@@ -316,25 +435,31 @@ def save_all_data():
 def generate_ai_response(game_room, is_embark=False):
     #fetching world context for prompt
     world_context = "Unknown World"
-    world_history = "No known history."
+    #placeholder for the condensed lore
+    relevant_lore_block = "No known history."
     
-    if game_room.world_id and game_room.world_id in worlds:
-        w = worlds[game_room.world_id]
-        world_context = f"{w.name}: {w.description}"
-        world_history = "\n".join([f"- {e}" for e in w.major_events])
-
+    current_actions = game_room.compile_turn_actions()
+    
     #set up message history to keep storyteller on track
     relevant_history = [m for m in game_room.history if isinstance(m, dict) and m.get('type') == 'story']
-    recent_history = relevant_history[-15:]
+    recent_history_msgs = relevant_history[-15:]
 
     history_text = ""
-    for msg in recent_history:
+    for msg in recent_history_msgs:
         if isinstance(msg, dict):
             #we skip system/hidden messages in the prompt history to save tokens
             if msg.get('type') == 'story': 
                 history_text += f"{msg['sender']}: {msg['text']}\n"
     
-    current_actions = game_room.compile_turn_actions()
+    if game_room.world_id and game_room.world_id in worlds:
+        w = worlds[game_room.world_id]
+        world_context = f"{w.name}: {w.description}"
+        
+        #implementing the RelevanceEngine
+        #this condenses the world.major_events and world.entities based on what's happening NOW
+        #it scans 'history_text' and 'current_actions' to pick the most relevant lore.
+        relevant_lore_block = RelevanceEngine.get_relevant_lore(w, history_text, current_actions, limit=8)
+
     party_stats = game_room.get_party_status_string()
 
     special_instructions = ""
@@ -354,8 +479,8 @@ def generate_ai_response(game_room, is_embark=False):
     - Realism Level: {game_room.realism}
     - World Context: {world_context}
     
-    WORLD HISTORY (MAJOR EVENTS):
-    {world_history}
+    RELEVANT LORE & HISTORY (Use these for context):
+    {relevant_lore_block}
 
     {party_stats}
     
