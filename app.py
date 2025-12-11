@@ -21,12 +21,12 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 #Gemini API
-# UPDATED: Robust key loading
+#key loading from .env
 raw_key = os.getenv("GEMINI_API_KEY")
-# Treat empty strings or whitespace as None
+#if the .env field is empty or just whitespace, treat it as none
 DEFAULT_API_KEY = raw_key.strip() if raw_key and raw_key.strip() else None
 
-# Debug print to verify state on startup
+#server prints to see if API key is found in the environment
 if DEFAULT_API_KEY:
     print(f"[SYSTEM] Server API Key Loaded: YES (Ends with {DEFAULT_API_KEY[-4:]})")
 else:
@@ -38,16 +38,16 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 games = {}
 
 #file path for persistent world storage
-# Get the absolute path of the directory where app.py is located
+#get the absolute path of the directory where app.py is located
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Force Python to look for worlds.json in that specific directory
+#make sure the "world.json" file is there
 WORLDS_FILE = os.path.join(BASE_DIR, 'worlds.json')
 
 #new global world storage
 # {'world_id': World Object}
 worlds = {} 
 
-#Gemini configurations
+#gemini configurations
 generation_config = {
     "temperature": 1,
     "top_p": 0.95,
@@ -60,17 +60,18 @@ generation_config = {
 #           Classes          #
 ##############################
 
-#new class for persistent world data
+#storing persistent world data, major events, setting, description, etc.
 class World:
-    # updated to store setting and realism as persistent world data
+    #updated to store setting and realism as persistent world data
     def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm."):
-        self.id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-        self.name = name
-        self.setting = setting
-        self.realism = realism
-        self.description = description
-        self.major_events = [] 
+        self.id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))   #randomly generated ID to distinguish the world
+        self.name = name                                                                 #name of the world (e.g. Middle Earth)
+        self.setting = setting                                                           #world's setting (e.g. Cyberpunk metropolis)
+        self.realism = realism                                                           #how realistic should the world behave? (High, Mid, Low) determines how wacky the world should behave
+        self.description = description                                                   #description of the planet (THIS DOESN'T POPULATE OR DO ANYTHING AT THE MOMENT)
+        self.major_events = []                                                           #a list of major world events that should remain persistent across playthroughs. (e.g. volcano covering planet with ash)
 
+    #adds a new event to the major events of the planet
     def add_event(self, event_text):
         self.major_events.append(event_text)
         if len(self.major_events) > 20: 
@@ -87,46 +88,60 @@ class World:
             'major_events': self.major_events
         }
 
-#stores information about players, such
+#stores information about players
 class Player:
     def __init__(self, sid, username):
-        self.sid = sid
-        self.username = username
-        self.hp = 100
-        self.status = "Healthy"  # e.g. Healthy, Wounded, Unconscious, Dead
-        self.inventory = []
-        self.current_action = None  # Stores what they typed this turn
-        self.current_roll = None # dice roll
-        self.has_acted = False
-        self.description = "" # Restored description field
-        self.tags = []
-        self.ambition = "Unknown"
-        self.secret = ""
-        self.is_ready = False # Used for the lobby phase
+        self.sid = sid              #socket ID of the player for unique validations
+        self.username = username    #username of the player / name of their character
+        self.hp = 100               #health of the character, starts at 100, 0 is dead.
+        self.status = "Healthy"     #e.g. Healthy, Wounded, Unconscious, Dead. Player starts "Healthy"
+        self.inventory = []         #inventory of the character (NOTE: This is unused at the moment)
+        self.current_action = None  #stores what they typed this turn
+        self.current_roll = None    #dice roll for the turn
+        self.has_acted = False      #true/false if they've input an action this turn
+        self.description = ""       #description field
+        self.tags = []              #character tags (e.g. Human, Knight, Wizard)
+        self.ambition = "Unknown"   #ambition/goal of the character (e.g. conquer the world)
+        self.secret = ""            #secrets of the character (hidden from other players on the character sheet)
+        self.is_ready = False       #used for the lobby phase
 
+    #reset the turn of the player, emptying their role, action, and setting their "has_acted" to false.
     def reset_turn(self):
         self.current_action = None
         self.current_roll = None
         self.has_acted = False
 
+    #__repr__ indicates the official string represetnation of an object.
     def __repr__(self):
         return f"{self.username} [HP:{self.hp}] ({self.status})"
 
-class GameRoom:
-    #updated init to include setting, realism, and world binding
-    def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None, custom_api_key=None):
-        self.room_id = room_id
-        self.setting = setting
-        self.realism = realism
-        self.world_id = world_id
-        self.custom_api_key = custom_api_key #stores override api keys
-        self.history = []  #list of strings or dicts
-        self.players = {}  #dict: { sid: Player }
-        self.is_started = False 
+#FIXME: Stub class
+#this class should eventually hold important characters to the world
+#perhaps even faction/affiliations?
+class Character:
+    def __init__(self):
+        pass
 
+#NOTE: It would be cool store a bunch more classes of information such as "Faction", "Landmarks", "Cities" etc.
+#my concern is of course token sizing in our prompting, perhaps there is a way we can run an algorithm / function to determine relevant information to feed the prompt first?
+
+#stores information about the game room
+class GameRoom:
+    def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None, custom_api_key=None):
+        self.room_id = room_id                  #unique ID of the room for people to join
+        self.setting = setting                  #setting of the world the room is using
+        self.realism = realism                  #how realistic should the room behave?
+        self.world_id = world_id                #id of the loaded world
+        self.custom_api_key = custom_api_key    #stores override api keys
+        self.history = []                       #list of strings or dicts
+        self.players = {}                       #dict: { sid: Player }
+        self.is_started = False                 #has the room started the gameplay loop yet?
+
+    #add a player into the room.
     def add_player(self, sid, username):
         self.players[sid] = Player(sid, username)
 
+    #remove a player from the room
     def remove_player(self, sid):
         if sid in self.players:
             del self.players[sid]
@@ -152,6 +167,7 @@ class GameRoom:
             actions.append(f"- {p.username} {roll_info} attempts to: {action_str}")
         return "\n".join(actions)
 
+    #resets all the players in the lobbies turns, to start the next round
     def reset_turns(self):
         for p in self.players.values():
             p.reset_turn()
@@ -183,14 +199,14 @@ def load_worlds():
         with open(WORLDS_FILE, 'r') as f:
             data = json.load(f)
             for w_id, w_data in data.items():
-                # defaults added for backward compatibility
+                #defaults added for backward compatibility
                 w = World(
                     w_data['name'], 
                     w_data.get('setting', 'Medieval Fantasy'), 
                     w_data.get('realism', 'High'), 
                     w_data['description']
                 )
-                w.id = w_data['id'] # overwrite random id
+                w.id = w_data['id'] #overwrite random id
                 w.major_events = w_data['major_events']
                 worlds[w_id] = w
     except Exception as e:
@@ -215,11 +231,11 @@ def generate_ai_response(game_room, is_embark=False):
         world_context = f"{w.name}: {w.description}"
         world_history = "\n".join([f"- {e}" for e in w.major_events])
 
-    # set up message history to keep storyteller on track
+    #set up message history to keep storyteller on track
     history_text = ""
     for msg in game_room.history:
         if isinstance(msg, dict):
-            # We skip system/hidden messages in the prompt history to save tokens
+            #we skip system/hidden messages in the prompt history to save tokens
             if msg.get('type') == 'story': 
                 history_text += f"{msg['sender']}: {msg['text']}\n"
     
@@ -231,8 +247,10 @@ def generate_ai_response(game_room, is_embark=False):
         special_instructions = "THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). Use the player Tags and Secrets to flavor the intro."
         current_actions = "The party is ready to begin."
 
-    # schema enforcing prompt
-    # updated prompt to include world context, settings, and world updates schema
+    #schema enforcing prompt
+    #the prompt below is quite complicated and contains A LOT of information.
+    #it should all be self-explanatory by the context and the variable names.
+    #the AI model returns a JSON formatted response that the server parses in order to update player/world states. 
     prompt = f"""
     You are GAOL, a Dungeon Master AI. 
 
@@ -275,17 +293,15 @@ def generate_ai_response(game_room, is_embark=False):
     """
     
     try:
-        # Determine which key to use
         active_key = None
-        
-        # 1. Prefer Room Specific Key
+        #prefer room override key
         if game_room.custom_api_key and len(game_room.custom_api_key) > 10:
             active_key = game_room.custom_api_key
-        # 2. Fallback to Server Environment Key (if available)
+        #fallback to server .env key (if one exists)
         elif DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10:
             active_key = DEFAULT_API_KEY
             
-        # 3. If neither exists, error out
+        #if neither - return an error
         if not active_key:
              return {"story_text": "CRITICAL ERROR: No Gemini API Key provided. Enter one in Room Creation or check server .env config.", "updates": {}, "world_updates": []}
              
@@ -293,10 +309,10 @@ def generate_ai_response(game_room, is_embark=False):
 
         response = model.generate_content(prompt, generation_config=generation_config) #generate response
 
-        return json.loads(response.text) # Parse JSON string to Python Dict
+        return json.loads(response.text) #parse JSON string to Python Dict
     except Exception as e:
         print(f"AI Error: {e}")
-        # Return error directly to user instead of silent fallback
+        #return error directly to user instead of silent fallback
         return {"story_text": "Gaol has gone silent...", "updates": {}, "world_updates": []}
 
 #extracted turn processing so it can be triggered by disconnects or actions
@@ -355,22 +371,21 @@ def process_turn(room_id):
     #reset everyones turns
     game.reset_turns()
     
-    # Status back to waiting for move
+    #status back to waiting for move
     emit('status', {'msg': 'GAOL awaits your move...'}, room=room_id)
     
     #display the status updates for each player, and update the frontend character sheets to reflect this.
-    # updated to include has_acted check (which will be false now)
     game_state_export = [
         {
-            'name': p.username, 
-            'hp': p.hp, 
-            'status': p.status, 
-            'has_acted': p.has_acted, 
-            'is_ready': p.is_ready, 
-            'tags': p.tags,
-            'ambition': p.ambition,
-            'secret': p.secret,
-            'description': p.description
+            'name': p.username,                 #characters name
+            'hp': p.hp,                         #characters health (x/100)
+            'status': p.status,                 #characters status (Healthy, Transformed, etc.)
+            'has_acted': p.has_acted,           #has the player input an action yet?
+            'is_ready': p.is_ready,             #is the player ready (input action or submitted character sheet)
+            'tags': p.tags,                     #characters tags
+            'ambition': p.ambition,             #characters ambition/goal
+            'secret': p.secret,                 #characters secrets
+            'description': p.description        #characters description
         } 
         for p in game.players.values()
     ]
@@ -394,7 +409,7 @@ def index():
 def handle_get_worlds():
     world_list = [{'id': k, 'name': v.name} for k, v in worlds.items()]
     emit('world_list', world_list)
-    # UPDATED: Tell client if server has a default key
+    #tell the client if the server has a default .env key
     has_key = bool(DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10)
     emit('server_config', {'has_env_key': has_key})
 
@@ -404,7 +419,7 @@ def handle_create_room(data):
     room_id = data['room']
     username = data['username']
     
-    # inputs from frontend
+    #inputs from frontend
     req_setting = data.get('setting', 'Medieval Fantasy')
     req_realism = data.get('realism', 'High')
     world_selection = data.get('world_selection') 
@@ -415,7 +430,7 @@ def handle_create_room(data):
         emit('status', {'msg': 'ERROR: Room ID already exists.'})
         return
         
-    # Validation: Check if a key is available EITHER from input OR env
+    #check if a key is available from the input field or from the server environment
     has_custom_key = custom_api_key and len(custom_api_key) > 10
     has_env_key = DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10
     
@@ -428,7 +443,7 @@ def handle_create_room(data):
     final_realism = req_realism
 
     if world_selection == 'NEW':
-        # Create new world with the provided settings
+        #create new world with the provided settings
         w = World(
             new_world_name if new_world_name else f"World {room_id}",
             req_setting,
@@ -438,7 +453,7 @@ def handle_create_room(data):
         final_world_id = w.id
         save_worlds() 
     elif world_selection in worlds:
-        # Load existing world and OVERRIDE provided settings
+        #load existing world and OVERRIDE provided settings
         final_world_id = world_selection
         w = worlds[final_world_id]
         final_setting = w.setting
@@ -482,19 +497,19 @@ def on_join(data):
         emit('status', {'msg': 'CONNECTION REJECTED: ROOM FULL (MAX 6)'}, room=sid)
         return
     
-    # Determine Admin Status (First player in the dict is admin)
+    #determine "admin" status (first played in the dict is the admin)
     is_admin = False
     if len(game.players) == 0:
         is_admin = True
 
     game.add_player(sid, username)
 
-    #late joiner logic
+    #hot-join player logic
     if game.is_started:
         p = game.players[sid]
         p.has_acted = True
         p.current_action = "Joins the party."
-        p.is_ready = True # ensure they don't block checks
+        p.is_ready = True #ensure they don't block checks
         emit('status', {'msg': 'Game in progress. You will join next turn.'}, room=sid)
     
     emit('status', {'msg': f'{username} CONNECTED.'}, room=room)
@@ -509,8 +524,7 @@ def on_join(data):
         'history': game.history if game.is_started else []
     }, room=sid)
 
-    # Send immediate state update so the new player sees existing cards
-    # Added has_acted to export
+    #send immediate state update so the new player sees existing cards
     game_state_export = [
         {
             'name': p.username, 
@@ -529,7 +543,7 @@ def on_join(data):
 
 @socketio.on('get_rooms')
 def handle_get_rooms():
-    # Compile a list of active rooms
+    #compile a list of active rooms
     room_data = []
     for g in games.values():
         world_name = "Unknown"
@@ -590,7 +604,7 @@ def handle_player_ready(data):
     room = data['room']
     sid = request.sid
     
-    # inputs
+    #inputs
     description = data.get('description', '')
     tags = data.get('tags', [])
     ambition = data.get('ambition', 'Unknown')
@@ -635,19 +649,19 @@ def handle_embark(data):
     
     game = games[room]
     
-    # Validation: Ensure all players are ready
+    #ensure all players are ready
     if not game.all_players_ready():
         emit('status', {'msg': 'Cannot Embark: Not all players are ready.'}, room=room)
         return
 
     game.is_started = True
-    # Clean up lobby ready flags so they don't interfere with game turn flags
+    #clean up lobby ready flags so they don't interfere with game turn flags
     for p in game.players.values():
         p.is_ready = False
         
     emit('status', {'msg': 'INITIALIZING SCENARIO...'}, room=room)
     
-    # Generate the intro
+    #generate the intro
     ai_data = generate_ai_response(game, is_embark=True)
     
     story_text = ai_data.get('story_text', 'The adventure begins...')
@@ -656,10 +670,10 @@ def handle_embark(data):
     game.history.append({'sender': 'Gaol', 'text': story_text, 'type': 'story'})
     emit('message', {'sender': 'Gaol', 'text': story_text}, room=room)
     
-    # Game is officially on, set status
+    #game is officially on, set status
     emit('status', {'msg': 'GAOL awaits your move...'}, room=room)
     
-    # Update frontend to clear ready flags
+    #update frontend to clear ready flags
     game_state_export = [
         {
             'name': p.username, 
@@ -700,7 +714,7 @@ def handle_action(data):
     #notify that a player has finished submitting their action (does not display their input)
     emit('status', {'msg': f'{player.username} has locked in their move...'}, room=room)
     
-    # Update game state immediately to show ready status
+    #update game state immediately to show ready status
     game_state_export = [
         {
             'name': p.username, 
@@ -727,7 +741,7 @@ def handle_action(data):
 
 load_worlds()
 
-# Seed a default world if empty
+#seed a default world if empty
 if not worlds:
     default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
     worlds[default_world.id] = default_world
