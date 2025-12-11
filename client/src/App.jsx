@@ -14,7 +14,7 @@ function App() {
   
   const [activeRooms, setActiveRooms] = useState([]);
 
-  // World tracking
+  //world tracking
   const [currentWorldName, setCurrentWorldName] = useState('');
   const [worldData, setWorldData] = useState(null); 
   
@@ -28,15 +28,15 @@ function App() {
   const [ambitionInput, setAmbitionInput] = useState('Unknown');
   const [secretInput, setSecretInput] = useState('');
 
-  // Creation parameters
+  //creation parameters
   const [setting, setSetting] = useState('Medieval Fantasy');
   const [realism, setRealism] = useState('High');
   const [selectedWorld, setSelectedWorld] = useState('');
   const [newWorldName, setNewWorldName] = useState('');
   const [availableWorlds, setAvailableWorlds] = useState([]);
-  // UPDATED: State for Custom API Key
+  //state for Custom API Key
   const [customApiKey, setCustomApiKey] = useState('');
-  // UPDATED: Track if server has a default key (null = loading)
+  //track if server has a default key (null = loading)
   const [serverHasKey, setServerHasKey] = useState(null);
 
   const [messages, setMessages] = useState([]);
@@ -67,7 +67,7 @@ function App() {
         else setSelectedWorld('NEW');
     });
     
-    // UPDATED: Listen for server config to know if .env key exists
+    //listen for server config to know if .env key exists
     socket.on('server_config', (data) => {
         setServerHasKey(data.has_env_key);
     });
@@ -152,12 +152,12 @@ function App() {
         return;
     }
     
-    // UPDATED: Strict Validation
-    // Use custom key if present, otherwise rely on server key.
-    // If NO custom key AND NO server key, block creation.
+    //strict API key validation
+    //use custom key if present, otherwise rely on server key.
+    //if NO custom key AND NO server key, block creation.
     const hasCustom = customApiKey && customApiKey.trim().length > 10;
     
-    // Default to false for safety if server config hasn't loaded yet
+    //default to false for safety if server config hasn't loaded yet
     const safeServerHasKey = serverHasKey === true;
     
     if (!hasCustom && !safeServerHasKey) {
@@ -321,7 +321,7 @@ function App() {
                               <th>ID</th>
                               <th>World</th>
                               <th>#</th>
-                              <th>API</th> {/* UPDATED: New Column */}
+                              <th>API</th>
                               <th>Action</th>
                           </tr>
                       </thead>
@@ -362,7 +362,6 @@ function App() {
     );
   }
 
-  // ... (Rest of the render logic remains identical)
   return (
     <div className="main-layout">
       {/* Left side */}
@@ -416,7 +415,7 @@ function App() {
             placeholder="Describe your action..."
             disabled={messages.length === 0} 
           />
-          {/* Dice */}
+          {/* Dice - Eventually we'll have frames to animate this rolling process */}
           <div className="dice-display">
               <div className="dice-label">D20</div>
               <div className={`dice-value ${lastRoll === 20 ? 'crit-success' : lastRoll === 1 ? 'crit-fail' : ''}`}>
