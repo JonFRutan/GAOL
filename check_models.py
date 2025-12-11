@@ -1,3 +1,7 @@
+#jfr
+
+# this is a helper script writen just to show available models on Gemini
+
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
