@@ -32,6 +32,7 @@ function App() {
   //flags for game permissions and state
   const [isAdmin, setIsAdmin] = useState(false); 
   const [isReady, setIsReady] = useState(false); 
+  const [isEmbarking, setIsEmbarking] = useState(false); //track if launch animation started
   
   //tracks which character sheet is currently being viewed
   const [selectedPlayer, setSelectedPlayer] = useState(null); 
@@ -63,6 +64,8 @@ function App() {
   
   //toggles right panel view between character sheet and world info
   const [activeTab, setActiveTab] = useState('character'); 
+  //toggles sub-tabs within the world sheet
+  const [worldTab, setWorldTab] = useState('history');
 
   //state for about modal
   const [showAbout, setShowAbout] = useState(false);
@@ -117,6 +120,7 @@ function App() {
       setGameState('playing');
       setJoinPassword(''); // clear password on success
       setShowPwdModal(false);
+      setIsEmbarking(false); // reset embark state
     });
 
     //handle room closure by host
@@ -128,6 +132,7 @@ function App() {
         setIsReady(false);
         setIsAdmin(false);
         setStatusMsg(data.msg);
+        setIsEmbarking(false);
     });
 
     //updates world lore/events when ai triggers a change
@@ -260,6 +265,7 @@ function App() {
 
   //trigger for admin to start the game loop
   const handleEmbark = (e) => {
+    setIsEmbarking(true); // Hide the button immediately
     // Generate particles
     const rect = e.target.getBoundingClientRect();
     const newParticles = [];
@@ -316,6 +322,21 @@ function App() {
 
   //check to see if everyone is ready so embark button can be enabled
   const allPlayersReady = partyStats.length > 0 && partyStats.every(p => p.is_ready);
+  
+  //filters for world sheet tabs
+  const getGods = () => {
+      if(!worldData || !worldData.entities) return [];
+      return worldData.entities.filter(e => 
+          e.type.toLowerCase().includes('god') || e.type.toLowerCase().includes('deity')
+      );
+  };
+  
+  const getFactions = () => {
+      if(!worldData || !worldData.entities) return [];
+      return worldData.entities.filter(e => 
+          e.type.toLowerCase().includes('faction') || e.type.toLowerCase().includes('guild')
+      );
+  };
 
   //render logic for the initial login/lobby screen
   if (gameState === 'login') {
@@ -554,7 +575,7 @@ function App() {
 
         <div className="chat-window">
             {/* embark button only visible to admin in pre-game */}
-            {messages.length === 0 && isAdmin && (
+            {messages.length === 0 && isAdmin && !isEmbarking && (
                 <div className="embark-overlay">
                     <button 
                         className="embark-btn" 
@@ -758,17 +779,46 @@ function App() {
                         <div className="world-desc">
                             {worldData.description}
                         </div>
-                        <div className="world-events-title">MAJOR EVENTS</div>
-                        {/* scrollable list of persistent world events */}
+                        
+                        {/* World Sub-Tabs */}
+                        <div className="sub-tab-bar">
+                            <button className={`sub-tab-btn ${worldTab === 'history' ? 'active' : ''}`} onClick={()=>setWorldTab('history')}>HISTORY</button>
+                            <button className={`sub-tab-btn ${worldTab === 'gods' ? 'active' : ''}`} onClick={()=>setWorldTab('gods')}>GODS</button>
+                            <button className={`sub-tab-btn ${worldTab === 'factions' ? 'active' : ''}`} onClick={()=>setWorldTab('factions')}>FACTIONS</button>
+                        </div>
+
+                        {/* scrollable list of content based on tab */}
                         <div className="world-events-list">
-                            {worldData.major_events && worldData.major_events.length > 0 ? (
-                                worldData.major_events.map((e, i) => (
-                                    <div key={i} className="event-item">
-                                        - {e}
-                                    </div>
-                                ))
-                            ) : (
-                                <div style={{color:'#555'}}>No major history yet.</div>
+                            {worldTab === 'history' && (
+                                worldData.major_events && worldData.major_events.length > 0 ? (
+                                    worldData.major_events.map((e, i) => (
+                                        <div key={i} className="event-item">- {e}</div>
+                                    ))
+                                ) : <div style={{color:'#555'}}>No major history yet.</div>
+                            )}
+
+                            {worldTab === 'gods' && (
+                                getGods().length > 0 ? (
+                                    getGods().map((e, i) => (
+                                        <div key={i} className="entity-item">
+                                            <div className="entity-name">{e.name}</div>
+                                            <div className="entity-type">{e.type}</div>
+                                            <div className="entity-desc">{e.description}</div>
+                                        </div>
+                                    ))
+                                ) : <div style={{color:'#555'}}>No deities known.</div>
+                            )}
+
+                            {worldTab === 'factions' && (
+                                getFactions().length > 0 ? (
+                                    getFactions().map((e, i) => (
+                                        <div key={i} className="entity-item">
+                                            <div className="entity-name">{e.name}</div>
+                                            <div className="entity-type">{e.type}</div>
+                                            <div className="entity-desc">{e.description}</div>
+                                        </div>
+                                    ))
+                                ) : <div style={{color:'#555'}}>No major factions known.</div>
                             )}
                         </div>
                      </>

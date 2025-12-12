@@ -483,11 +483,15 @@ def generate_ai_response(game_room, is_embark=False):
 
     special_instructions = ""
     if is_embark:
+        # UPDATED: Reinforced instructions to catch Deities/Factions from player text
         special_instructions = """
         THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. 
-        Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). 
-        Use the player Tags and Secrets to flavor the intro.
-        - SCAN PLAYER DESCRIPTIONS: If a player mentions a specific God, Patron, or Organization in their tags/desc that is not yet in the World Context, create it immediately as a new_entity.
+        1. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). 
+        2. WORLD GENERATION TASK:
+           - SCAN all player descriptions, tags, and secrets for named entities (Gods, Patrons, Factions) that are missing from the World Context.
+           - Generate a 'new_entities' entry for EACH one found.
+           - IMPERATIVE: Use type="God" for deities/patrons, type="Faction" for guilds/groups. 
+           - Provide a brief description for them based on the player's text.
         """
         current_actions = "The party is ready to begin."
 
@@ -533,7 +537,8 @@ def generate_ai_response(game_room, is_embark=False):
       }},
       "world_updates": ["The King has been assassinated."],
       "new_entities": [
-          {{ "name": "The Iron Legion", "type": "Faction", "description": "A mercenary army.", "keywords": ["war", "mercenary", "iron"] }}
+          {{ "name": "The Iron Legion", "type": "Faction", "description": "A mercenary army.", "keywords": ["war", "mercenary", "iron"] }},
+          {{ "name": "Solara", "type": "God", "description": "Goddess of the sun.", "keywords": ["light", "sun", "holy"] }}
       ],
       "new_characters": [
           {{ "name": "Garrick", "role": "Blacksmith", "affiliation": "Iron Legion", "description": "A gruff dwarf." }}
