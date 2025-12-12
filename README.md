@@ -37,8 +37,7 @@ Supports **up to 6 players** with support for hot-dropping and hot-joining.
 
 
 ### The Dice Will Decide
-The outcome of your actions is currently determined by a D20 roll (1 = Crit Fail, 20 = Crit Success).  
-*This feature is currently UNTESTED.*
+Your actions will be weighed by the roll of a D20. Keep in mind the dice don't decide everything, and GAOL may have plans of his own with your choices...
 
 ## How does it work?
 GAOL uses the Gemini API, specifically the `Gemini-2.5-flash` model. GAOL's server is set up with very detailed and explicit instructions to provide the API which return not just text, but a JSON object that is parsed to provide both the generated story text, and a list of updates to be done across characters and the world. These updates are reflected on the data sheets, character sheets are frequently updated and major events can even change the world sheet.
