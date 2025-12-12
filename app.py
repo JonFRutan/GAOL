@@ -1,5 +1,5 @@
 #jfr
-import os, json, random, string, time
+import os, json, random, string, time, re
 import google.generativeai as genai
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
@@ -65,6 +65,25 @@ generation_config = {
 #                            Data Classes                              #
 ########################################################################
 
+#generic class for locations, cities, landmarks, etc.
+class WorldEntity:
+    def __init__(self, name, type_tag, description, keywords=[]):
+        self.id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        self.name = name
+        self.type_tag = type_tag # e.g. "Faction", "City", "NPC"
+        self.description = description
+        #keywords help the relevance engine find this without exact name matches
+        #e.g. for "Thieves Guild", keywords might be ["crime", "steal", "rogue"]
+        self.keywords = keywords 
+        
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "type": self.type_tag,
+            "description": self.description,
+            "keywords": self.keywords
+        }
+
 #storing persistent world data, major events, setting, description, etc.
 class World:
     def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm."):
@@ -74,12 +93,28 @@ class World:
         self.realism = realism                                                           #how realistic should the world behave? (High, Mid, Low) determines how wacky the world should behave
         self.description = description                                                   #description of the planet (THIS DOESN'T POPULATE OR DO ANYTHING AT THE MOMENT)
         self.major_events = []                                                           #a list of major world events that should remain persistent across playthroughs. (e.g. volcano covering planet with ash)
+        self.entities = []                                                               #list of WorldEntity objects
+        self.characters = []                                                             #list of characters within the world
 
     #adds a new event to the major events of the planet
     def add_event(self, event_text):
         self.major_events.append(event_text)
         if len(self.major_events) > 20: 
             self.major_events.pop(0)
+        
+    #adding a new entity to the world.
+    def add_entity(self, name, type_tag, description, keywords=[]):
+        #no duplicates
+        if any(e.name.lower() == name.lower() for e in self.entities):
+            return
+        new_entity = WorldEntity(name, type_tag, description, keywords)
+        self.entities.append(new_entity)
+
+    def add_character(self, name, description, role, affiliation):
+        if any(c.name.lower() == name.lower() for c in self.characters):
+            return
+        new_character = Character(name, description, role, affiliation)
+        self.characters.append(new_character)
     
     #helper to convert object to dict for json saving
     def to_dict(self):
@@ -89,7 +124,9 @@ class World:
             'setting': self.setting,
             'realism': self.realism,
             'description': self.description,
-            'major_events': self.major_events
+            'major_events': self.major_events,
+            'entities': [e.to_dict() for e in self.entities],
+            'characters': [c.to_dict() for c in self.characters]
         }
 
 #stores information about players
@@ -134,12 +171,13 @@ class Player:
 
 #store important persistent characters to the world
 class Character:
-    def __init__(self, name, description, role="NPC", affiliation=None):
+    def __init__(self, name, description, role="NPC", affiliation=None, status="Alive"):
         self.id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))  #unique ID of the characte
         self.name = name                                                                #name of the character
         self.description = description                                                  #description of the character
         self.role = role                                                                #e.g. villain, tavern keeper, etc    
-        self.affiliation = affiliation                                                  #faction / group affiliation e.g. Occultists          
+        self.affiliation = affiliation                                                  #faction / group affiliation e.g. Occultists        
+        self.status = status  
     
     def to_dict(self):
         return {
@@ -147,7 +185,8 @@ class Character:
             'name': self.name,
             'description' : self.description,
             'role' : self.role,
-            'affiliation': self.affiliation
+            'affiliation': self.affiliation,
+            'status': self.status
         }
     
 #NOTE: It would be cool store a bunch more classes of information such as "Faction", "Landmarks", "Cities" etc.
@@ -233,6 +272,88 @@ class GameRoom:
 #                          Helper Functions                            #
 ########################################################################
 
+# RelevanceEngine class
+# The purpose of this class is to allow for better scoping of context so that only relevant information is sent into the prompt
+# and to reduce unnecessary information from taking up token count in our prompting.
+class RelevanceEngine:
+    #stop words are common word that aren't relevant to our prompting, and removing them helps minimize prompt bloat and improve both efficiency and information relevancy.
+    STOP_WORDS = {
+        'the', 'is', 'at', 'which', 'on', 'a', 'an', 'and', 'or', 'but', 
+        'if', 'of', 'to', 'in', 'for', 'with', 'by', 'from', 'up', 'about', 
+        'into', 'over', 'after', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+        'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their'
+    }
+
+    #takes all the tokens submitted, cleans them, and removes stop words.
+    @staticmethod
+    def extract_keywords(text):
+        if not text: return set()
+        #clean and split text into tokens
+        tokens = re.findall(r'\b\w+\b', text.lower())                         #extracts just the words, letters, and characters (removing punctuation)
+        return {t for t in tokens if t not in RelevanceEngine.STOP_WORDS}     #removes all the stop words from the list of words
+
+    #
+    @staticmethod
+    def get_relevant_lore(world, history_buffer, current_actions, limit=5):
+        #creates search context out of recent history and the actions being taken
+        search_context = history_buffer + " " + current_actions
+        #distills that search context into relevant keywords for better searching
+        context_keywords = RelevanceEngine.extract_keywords(search_context)
+        
+        #scoring out items
+        #scores against major events and worldentites
+        scored_items = []
+        
+        #process Entities
+        for entity in world.entities:
+            score = 0
+            #check keywords in name
+            entity_words = RelevanceEngine.extract_keywords(entity.name)
+            score += len(entity_words.intersection(context_keywords)) * 2            #2x weight value (explicit names are high value)
+            
+            #check manual keywords
+            if entity.keywords:
+                kw_set = {k.lower() for k in entity.keywords}
+                score += len(kw_set.intersection(context_keywords))                  #1x weight value
+            
+            #check description (lower weight)
+            desc_words = RelevanceEngine.extract_keywords(entity.description)
+            score += len(desc_words.intersection(context_keywords)) * 0.5            #1/2 weight value
+
+            if score > 0:
+                scored_items.append({
+                    'text': f"[{entity.type_tag}] {entity.name}: {entity.description}",
+                    'score': score
+                })
+
+        #process major world events (factoring in a recency bias with keyword matching)
+        #since events are added sequentially, the further they are in the list the more recent they happened.
+        total_events = len(world.major_events)
+        for i, event in enumerate(world.major_events):
+            score = 0
+            event_words = RelevanceEngine.extract_keywords(event)
+            score += len(event_words.intersection(context_keywords))
+            
+            #recency bias (events at end of list get higher base score)
+            recency_score = (i / total_events) * 2 if total_events > 0 else 0
+            
+            final_score = score + recency_score
+            
+            #keep the most recent event in mind, even if it's not super relevant.
+            if i == total_events - 1:
+                final_score += 10 
+
+            scored_items.append({
+                'text': f"[History] {event}",
+                'score': final_score
+            })
+            
+        #sort the items by their score, and slice the most relevant scorings.
+        scored_items.sort(key=lambda x: x['score'], reverse=True)
+        top_items = scored_items[:limit]
+        
+        return "\n".join([item['text'] for item in top_items])
+
 ##############################
 #      Loader Functions      #
 ##############################
@@ -255,6 +376,23 @@ def load_worlds():
                 )
                 w.id = w_data['id'] #overwrite random id
                 w.major_events = w_data['major_events']
+                
+                #load entities if they exist
+                if 'entities' in w_data:
+                    for e_data in w_data['entities']:
+                        w.add_entity(
+                            e_data['name'], 
+                            e_data['type'], 
+                            e_data['description'], 
+                            e_data.get('keywords', [])
+                        )
+                if 'characters' in w_data:
+                    for c_data in w_data['characters']:
+                        c_role = c_data.get('role', 'NPC')
+                        c_aff  = c_data.get('affiliation', 'None')
+                        c_stat = c_data.get('status', 'Alive') 
+                        w.add_character(c_data['name'], c_data['description'], c_role, c_aff, c_stat)
+                
                 worlds[w_id] = w
     except Exception as e:
         print(f"Error loading worlds: {e}")
@@ -316,30 +454,41 @@ def save_all_data():
 def generate_ai_response(game_room, is_embark=False):
     #fetching world context for prompt
     world_context = "Unknown World"
-    world_history = "No known history."
+    #placeholder for the condensed lore
+    relevant_lore_block = "No known history."
     
-    if game_room.world_id and game_room.world_id in worlds:
-        w = worlds[game_room.world_id]
-        world_context = f"{w.name}: {w.description}"
-        world_history = "\n".join([f"- {e}" for e in w.major_events])
-
+    current_actions = game_room.compile_turn_actions()
+    
     #set up message history to keep storyteller on track
     relevant_history = [m for m in game_room.history if isinstance(m, dict) and m.get('type') == 'story']
-    recent_history = relevant_history[-15:]
+    recent_history_msgs = relevant_history[-15:]
 
     history_text = ""
-    for msg in recent_history:
+    for msg in recent_history_msgs:
         if isinstance(msg, dict):
             #we skip system/hidden messages in the prompt history to save tokens
             if msg.get('type') == 'story': 
                 history_text += f"{msg['sender']}: {msg['text']}\n"
     
-    current_actions = game_room.compile_turn_actions()
+    if game_room.world_id and game_room.world_id in worlds:
+        w = worlds[game_room.world_id]
+        world_context = f"{w.name}: {w.description}"
+        
+        #implementing the RelevanceEngine
+        #this condenses the world.major_events and world.entities based on what's happening NOW
+        #it scans 'history_text' and 'current_actions' to pick the most relevant lore.
+        relevant_lore_block = RelevanceEngine.get_relevant_lore(w, history_text, current_actions, limit=8)
+
     party_stats = game_room.get_party_status_string()
 
     special_instructions = ""
     if is_embark:
-        special_instructions = "THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). Use the player Tags and Secrets to flavor the intro."
+        special_instructions = """
+        THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. 
+        Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). 
+        Use the player Tags and Secrets to flavor the intro.
+        - SCAN PLAYER DESCRIPTIONS: If a player mentions a specific God, Patron, or Organization in their tags/desc that is not yet in the World Context, create it immediately as a new_entity.
+        """
         current_actions = "The party is ready to begin."
 
     #schema enforcing prompt
@@ -354,8 +503,8 @@ def generate_ai_response(game_room, is_embark=False):
     - Realism Level: {game_room.realism}
     - World Context: {world_context}
     
-    WORLD HISTORY (MAJOR EVENTS):
-    {world_history}
+    RELEVANT LORE & HISTORY (Use these for context):
+    {relevant_lore_block}
 
     {party_stats}
     
@@ -369,22 +518,29 @@ def generate_ai_response(game_room, is_embark=False):
     
     INSTRUCTIONS:
     1. Narrate the outcome of their actions dramatically (max 4 sentences).
-    2. PAY ATTENTION TO DICE ROLLS: 1 is a Critical Failure (disaster), 20 is a Critical Success (miracle), 10 is average.
-    3. Update player stats if they took damage or used items.
-    4. You can update a player's Tags (e.g., if they mutate) or Ambition (if it changes).
-    5. You can update a player's Description (e.g. if they are scarred or change appearance).
-    6. If a MAJOR world-altering event occurs (e.g., a city falls, a god dies), add it to "world_updates".
-    7. Return ONLY a JSON object with this exact schema:
+    2. PAY ATTENTION TO DICE ROLLS: 1 is a Critical Failure, 20 is a Critical Success.
+    3. Update player stats (HP, Status, Tags, Description) if changed.
+    4. **WORLD BUILDING:** If the story introduces a NEW important Faction, City, Landmark, or NPC, you MUST create them in the JSON output.
+       - Do not create entities for trivial things (e.g. "a wooden chair"). Only persistent lore.
+       - "new_entities" are for Factions, Cities, Landmarks, or Deities.
+       - "new_characters" are for named NPCs present in the scene.
+    5. Return ONLY a JSON object with this exact schema:
     
     {{
       "story_text": "The narrative description...",
       "updates": {{
-         "PlayerName": {{ "hp_change": -10, "status": "Wounded", "tags_update": ["Undead", "Broken"], "description": "New appearance description" }}
+         "PlayerName": {{ "hp_change": -10, "status": "Wounded", "tags_update": ["Undead"], "description": "New appearance" }}
       }},
-      "world_updates": ["The King of Aethelgard has been assassinated."]
+      "world_updates": ["The King has been assassinated."],
+      "new_entities": [
+          {{ "name": "The Iron Legion", "type": "Faction", "description": "A mercenary army.", "keywords": ["war", "mercenary", "iron"] }}
+      ],
+      "new_characters": [
+          {{ "name": "Garrick", "role": "Blacksmith", "affiliation": "Iron Legion", "description": "A gruff dwarf." }}
+      ]
     }}
     
-    If no status change for a player, omit them from "updates".
+    6. NOT EVERYTHING NEEDS TO BE CHANGED OR UPDATED EVERY TURN. If nothing worth preserving happened to a player, world, or entity, omit them from the updates.
     """
     
     try:
@@ -438,16 +594,38 @@ def process_turn(room_id):
     #extract the story text to display on the console, and all the player object updates
     story_text = ai_data.get('story_text', 'The DM remains silent.')
     updates = ai_data.get('updates', {})
-    world_updates = ai_data.get('world_updates', [])
-    
-    #process world updates
-    if world_updates and game.world_id in worlds:
-        for event in world_updates:
-            worlds[game.world_id].add_event(event)
-        save_worlds() # save logic if world lore changed
-        #push world update to clients immediately
-        emit('world_update', worlds[game.world_id].to_dict(), room=room_id)
+    world_updates  = ai_data.get('world_updates', [])
+    new_entities   = ai_data.get('new_entities', [])
+    new_characters = ai_data.get('new_characters', [])
 
+    #process all the new world updates.
+    if game.world_id in worlds:
+        world = worlds[game.world_id]
+        #add new world events
+        for event in world_updates:
+            world.add_event(event)
+        #add new entities
+        for ent in new_entities:
+            world.add_entity(
+                ent.get('name', 'Unknown'),
+                ent.get('type', 'Location'),
+                ent.get('description', ''),
+                ent.get('keywords', [])
+            )
+            print(f"[LORE] Created Entity: {ent.get('name')}")
+        #add new characters
+        for char in new_characters:
+            world.add_character(
+                char.get('name', 'Unknown'),
+                char.get('description', ''),
+                char.get('role', 'NPC'),
+                char.get('affiliation', 'None')
+            )
+            print(f"[LORE] Created NPC: {char.get('name')}")
+        
+        save_worlds() # Persist all new lore to /data/worlds.json
+        emit('world_update', world.to_dict(), room=room_id)
+    
     #status changes to players takes effect
     for player_name, changes in updates.items():
         #find the player by name
@@ -472,7 +650,6 @@ def process_turn(room_id):
     
     #reset everyones turns
     game.reset_turns()
-
     save_rooms()
     save_players()
     
