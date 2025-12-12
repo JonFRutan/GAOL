@@ -564,13 +564,51 @@ def generate_ai_response(game_room, is_embark=False):
         genai.configure(api_key=active_key) #update the api_key
 
         response = model.generate_content(prompt, generation_config=generation_config) #generate response
+        
+        #debug logging input and outputs
+        try:
+            debug_dump = {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "prompt": prompt,
+                "raw_response": response.text
+            }
+            with open(os.path.join(DATA_DIR, 'last_gen.json'), 'w') as f:
+                json.dump(debug_dump, f, indent=2)
+        except Exception as e:
+            print(f"[DEBUG ERROR] Could not dump last_gen: {e}")
 
+       #TOKEN AUDITING
         if response.usage_metadata:
             input_tokens = response.usage_metadata.prompt_token_count
             output_tokens = response.usage_metadata.candidates_token_count
             total_tokens = response.usage_metadata.total_token_count
             print(f"[PROMPT INPUT TOKENS] - {input_tokens} | [RESPONSE OUTPUT TOKENS] - {output_tokens} | [TOTAL TOKEN USAGE] - {total_tokens}")
             print(f"[TOKEN AUDIT] % of Minute Limit: {(input_tokens / 1000000) * 100:.4f}%") # based on 1M TPM limit
+
+            try:
+                audit_file = os.path.join(DATA_DIR, 'token_audit.json')
+                audit_data = []
+                #read existing audit log if it exists
+                if os.path.exists(audit_file):
+                    with open(audit_file, 'r') as f:
+                        try:
+                            audit_data = json.load(f)
+                        except json.JSONDecodeError:
+                            audit_data = [] # Start fresh if corrupted
+                
+                #append new entry
+                audit_data.append({
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "input": input_tokens,
+                    "output": output_tokens,
+                    "total": total_tokens
+                })
+                
+                #write back to file
+                with open(audit_file, 'w') as f:
+                    json.dump(audit_data, f, indent=2)
+            except Exception as e:
+                print(f"[AUDIT ERROR] Could not save token audit: {e}")
 
         return json.loads(response.text) #parse JSON string to Python Dict
     except Exception as e:
