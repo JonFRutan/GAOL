@@ -483,7 +483,12 @@ def generate_ai_response(game_room, is_embark=False):
 
     special_instructions = ""
     if is_embark:
-        special_instructions = "THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). Use the player Tags and Secrets to flavor the intro."
+        special_instructions = """
+        THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. 
+        Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). 
+        Use the player Tags and Secrets to flavor the intro.
+        - SCAN PLAYER DESCRIPTIONS: If a player mentions a specific God, Patron, or Organization in their tags/desc that is not yet in the World Context, create it immediately as a new_entity.
+        """
         current_actions = "The party is ready to begin."
 
     #schema enforcing prompt
@@ -517,8 +522,8 @@ def generate_ai_response(game_room, is_embark=False):
     3. Update player stats (HP, Status, Tags, Description) if changed.
     4. **WORLD BUILDING:** If the story introduces a NEW important Faction, City, Landmark, or NPC, you MUST create them in the JSON output.
        - Do not create entities for trivial things (e.g. "a wooden chair"). Only persistent lore.
-       - "new_entities" are for Factions, Cities, Landmarks.
-       - "new_characters" are for named NPCs.
+       - "new_entities" are for Factions, Cities, Landmarks, or Deities.
+       - "new_characters" are for named NPCs present in the scene.
     5. Return ONLY a JSON object with this exact schema:
     
     {{
