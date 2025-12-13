@@ -49,6 +49,10 @@ function App() {
   const [selectedWorld, setSelectedWorld] = useState('');
   const [newWorldName, setNewWorldName] = useState('');
   const [availableWorlds, setAvailableWorlds] = useState([]);
+  
+  //New World Size Parameter
+  const [worldSize, setWorldSize] = useState('Medium');
+
   //state for Custom API Key
   const [customApiKey, setCustomApiKey] = useState('');
   //track if server has a default key (null = loading)
@@ -152,7 +156,16 @@ function App() {
 
     //request initial data on mount
     socket.emit('get_worlds');
+    
+    //request rooms immediately
     socket.emit('get_rooms');
+    
+    //Set up polling interval for rooms list (every 3 seconds)
+    const roomPollInterval = setInterval(() => {
+        if(gameState === 'login') {
+            socket.emit('get_rooms');
+        }
+    }, 3000);
 
     //cleanup listeners on unmount
     return () => { 
@@ -166,8 +179,9 @@ function App() {
       socket.off('world_update');
       socket.off('room_closed');
       socket.off('password_required');
+      clearInterval(roomPollInterval); //clear interval
     };
-  }, []);
+  }, [gameState]); //dependency on gameState ensuring interval respects login status
 
   //auto-scrolls to the bottom of chat when new messages arrive
   useEffect(() => {
@@ -269,6 +283,18 @@ function App() {
         localStorage.setItem('gaol_api_key', customApiKey);
     }
 
+    //Calculate Resolution based on size selection (2:1 Ratio Enforced)
+    let mapWidth = 1000;
+    let mapHeight = 500;
+    
+    if(worldSize === 'Small') {
+        mapWidth = 512;
+        mapHeight = 256;
+    } else if(worldSize === 'Large') {
+        mapWidth = 2048;
+        mapHeight = 1024;
+    }
+
     const finalWorldSelection = selectedWorld || 'NEW';
     socket.emit('create_room', {
       username,
@@ -278,7 +304,9 @@ function App() {
       world_selection: finalWorldSelection,
       new_world_name: newWorldName,
       custom_api_key: customApiKey,
-      password: createPassword // Optional password
+      password: createPassword, // Optional password
+      width: mapWidth,
+      height: mapHeight
     });
     setSelectedPlayer(username);
   };
@@ -367,6 +395,13 @@ function App() {
       );
   };
 
+  //helper to aggregate locations from both new system and legacy entities
+  const getLocations = () => {
+      if(!worldData) return [];
+      //get new system locations with coordinates
+      return worldData.locations || [];
+  };
+
   //Determine if character sheet prompt should be active (gold particle glow)
   //Active if: Game has not started (messages.length === 0) AND User is not ready AND Viewing Character tab AND Viewing own sheet
   const showSheetPrompt = !isReady && messages.length === 0 && activeTab === 'character' && isOwnSheet;
@@ -438,6 +473,15 @@ function App() {
                       <option value="High">High</option>
                       <option value="Mid">Mid</option>
                       <option value="Low">Low</option>
+                    </select>
+                  </div>
+                  {/* Map Scale Selection */}
+                  <div className="form-row">
+                    <label className="login-label">Map Size</label>
+                    <select onChange={e => setWorldSize(e.target.value)} value={worldSize}>
+                      <option value="Small">Small (512 x 256)</option>
+                      <option value="Medium">Medium (1000 x 500)</option>
+                      <option value="Large">Large (2048 x 1024)</option>
                     </select>
                   </div>
                  </>
@@ -852,6 +896,7 @@ function App() {
                         {/* World Sub-Tabs */}
                         <div className="sub-tab-bar">
                             <button className={`sub-tab-btn ${worldTab === 'history' ? 'active' : ''}`} onClick={()=>setWorldTab('history')}>HISTORY</button>
+                            <button className={`sub-tab-btn ${worldTab === 'locations' ? 'active' : ''}`} onClick={()=>setWorldTab('locations')}>LOCATIONS</button>
                             <button className={`sub-tab-btn ${worldTab === 'gods' ? 'active' : ''}`} onClick={()=>setWorldTab('gods')}>DEITIES</button>
                             <button className={`sub-tab-btn ${worldTab === 'factions' ? 'active' : ''}`} onClick={()=>setWorldTab('factions')}>FACTIONS</button>
                         </div>
@@ -868,6 +913,21 @@ function App() {
                                         </div>
                                     ))
                                 ) : <div style={{color:'#555'}}>No major history yet.</div>
+                            )}
+
+                            {worldTab === 'locations' && (
+                                getLocations().length > 0 ? (
+                                    getLocations().map((e, i) => (
+                                        <div key={i} className="entity-item">
+                                            <div className="entity-name">{e.name}</div>
+                                            <div className="entity-type">{e.type}</div>
+                                            <div className="entity-desc">{e.description}</div>
+                                            <div style={{fontSize: '0.75rem', color: 'var(--accent-dim)', marginTop: '5px', fontStyle:'italic'}}>
+                                                Coordinates: {e.x}, {e.y} | Size: {e.radius} | Controlled by: {e.affiliation || "Independent"}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : <div style={{color:'#555'}}>No known locations.</div>
                             )}
 
                             {worldTab === 'gods' && (
