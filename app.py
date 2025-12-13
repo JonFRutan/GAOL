@@ -113,7 +113,7 @@ class Location:
 
 #storing persistent world data, major events, setting, description, etc.
 class World:
-    def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm.", width=1000, height=500):
+    def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm.", width=1024, height=512):
         self.id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))   #randomly generated ID to distinguish the world
         self.name = name                                                                 #name of the world (e.g. Middle Earth)
         self.setting = setting                                                           #world's setting (e.g. Cyberpunk metropolis)
@@ -453,8 +453,8 @@ def load_worlds():
                     w_data.get('setting', 'Medieval Fantasy'), 
                     w_data.get('realism', 'High'), 
                     w_data['description'],
-                    w_data.get('width', 1000),
-                    w_data.get('height', 500)
+                    w_data.get('width', 1024),
+                    w_data.get('height', 512)
                 )
                 w.id = w_data['id'] #overwrite random id
                 
@@ -951,8 +951,8 @@ def handle_create_room(data):
     password = data.get('password') # retrieve optional password
     
     #width and height from the frontend payload (defaulting if missing)
-    req_width = data.get('width', 1000)
-    req_height = data.get('height', 500)
+    req_width = data.get('width', 1024)
+    req_height = data.get('height', 512)
 
     if room_id in games:
         emit('status', {'msg': 'ERROR: Room ID already exists.'})
@@ -992,7 +992,7 @@ def handle_create_room(data):
     else:
         #fallback
         if not worlds:
-            w = World("Gaia", "Medieval Fantasy", "High", "The default world.", 1000, 500)
+            w = World("Gaia", "Medieval Fantasy", "High", "The default world.", 1024, 512)
             worlds[w.id] = w
             save_worlds() 
         final_world_id = list(worlds.keys())[0]

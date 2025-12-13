@@ -344,9 +344,9 @@ function App() {
         localStorage.setItem('gaol_api_key', customApiKey);
     }
 
-    //Calculate Resolution based on size selection (2:1 Ratio Enforced)
-    let mapWidth = 1000;
-    let mapHeight = 500;
+    //calculate Resolution based on size selection (2:1 Ratio Enforced)
+    let mapWidth = 1024;
+    let mapHeight = 512;
     
     if(worldSize === 'Small') {
         mapWidth = 512;
