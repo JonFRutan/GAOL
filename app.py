@@ -34,7 +34,7 @@ if DEFAULT_API_KEY:
 else:
     print("[SYSTEM] Server API Key Loaded: NO (User must provide key)")
 
-model = genai.GenerativeModel('gemini-2.5-flash')
+model = genai.GenerativeModel('gemini-2.5-flash-lite')
 
 #file path for persistent data storage
 #get the absolute path of the directory where app.py is located
@@ -1319,6 +1319,35 @@ def handle_admin_override(data):
     game.history.append(whisper_msg)
     emit('message', whisper_msg, room=room)
 
+#admin model switcher
+@socketio.on('change_model')
+def handle_model_change(data):
+    room = data['room']
+    new_model_name = data['model']
+    sid = request.sid
+    
+    if room not in games: return
+    game = games[room]
+    
+    #verify sender is the admin
+    if game.admin_sid != sid:
+        emit('status', {'msg': 'UNAUTHORIZED.'}, room=sid)
+        return
+
+    global model
+    try:
+        model = genai.GenerativeModel(new_model_name)
+        print(f"[ADMIN] System Model Switched to: {new_model_name}")
+        
+        #broadcast the shift message
+        shift_msg = {'sender': 'System', 'text': 'A shift occurs in the mind of GAOL...', 'type': 'story'}
+        game.history.append(shift_msg)
+        emit('message', shift_msg, room=room)
+        emit('status', {'msg': f'Model updated to {new_model_name}'}, room=sid)
+    except Exception as e:
+        print(f"[ERROR] Failed to switch model: {e}")
+        emit('status', {'msg': 'Error switching model.'}, room=sid)
+        
 #handling player actions
 @socketio.on('player_action')
 def handle_action(data):

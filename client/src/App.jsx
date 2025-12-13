@@ -68,7 +68,7 @@ function App() {
   
   //admin override state
   const [overrideText, setOverrideText] = useState('');
-  const [showOverride, setShowOverride] = useState(false); // New Toggle for admin view
+  const [showOverrideModal, setShowOverrideModal] = useState(false); // Updated to Modal Toggle
   
   //toggles right panel view between character sheet and world info
   const [activeTab, setActiveTab] = useState('character'); 
@@ -83,6 +83,10 @@ function App() {
 
   //ref used for auto-scrolling chat
   const chatEndRef = useRef(null);
+
+  //state for model selector modal
+  const [showModelModal, setShowModelModal] = useState(false);
+  const [currentModel, setCurrentModel] = useState('gemini-2.5-flash-lite');
 
   //checks local storage for a previously saved api key on mount
   useEffect(() => {
@@ -129,7 +133,7 @@ function App() {
       setJoinPassword(''); // clear password on success
       setShowPwdModal(false);
       setIsEmbarking(false); // reset embark state
-      setShowOverride(false); // reset override state
+      setShowOverrideModal(false); // reset override state
     });
 
     //handle room closure by host
@@ -373,8 +377,15 @@ function App() {
       if (overrideText.trim()) {
           socket.emit('submit_override', { room, text: overrideText });
           setOverrideText('');
-          setShowOverride(false); // return to normal view
+          setShowOverrideModal(false); // return to normal view
       }
+  };
+
+  //handles admin changing the model
+  const handleModelChange = (modelName) => {
+      socket.emit('change_model', { room, model: modelName });
+      setCurrentModel(modelName);
+      setShowModelModal(false);
   };
 
   //check to see if everyone is ready so embark button can be enabled
@@ -404,180 +415,191 @@ function App() {
 
   //Determine if character sheet prompt should be active (gold particle glow)
   //Active if: Game has not started (messages.length === 0) AND User is not ready AND Viewing Character tab AND Viewing own sheet
-  const showSheetPrompt = !isReady && messages.length === 0 && activeTab === 'character' && isOwnSheet;
+  //FIX: Ignore "System" messages (like model changes) so they don't break the pre-game UI
+  const nonSystemMessages = messages.filter(m => m.sender !== 'System');
+  const showSheetPrompt = !isReady && nonSystemMessages.length === 0 && activeTab === 'character' && isOwnSheet;
 
   //render logic for the initial login/lobby screen
   if (gameState === 'login') {
     return (
       <div className="login-container">
-        <h1>GAOL</h1>
         
-        <div className="login-box">
-          {/* toggles between join and create modes */}
-          <div className="toggle-bar">
-             <button 
-               className={`toggle-btn ${loginMode === 'join' ? 'active' : ''}`}
-               onClick={()=>setLoginMode('join')}
-             >
-               JOIN ROOM
-             </button>
-             <button 
-               className={`toggle-btn ${loginMode === 'create' ? 'active' : ''}`}
-               onClick={()=>setLoginMode('create')}
-             >
-               CREATE ROOM
-             </button>
-          </div>
-
-          <div className="form-row">
-            <label className="login-label">Username</label>
-            <input placeholder="e.g. Shadowhawk30" onChange={e => setUsername(e.target.value)} />
-          </div>
-
-          <div className="form-row">
-            <label className="login-label">Room Code</label>
-            <input 
-                placeholder="e.g. 1987" 
-                value={room} 
-                onChange={e => setRoom(e.target.value)} 
-            />
-          </div>
-
-          {/* conditional rendering for creation inputs */}
-          {loginMode === 'create' && (
-            <>
-              <div className="form-row">
-                <label className="login-label">World</label>
-                <select onChange={e => setSelectedWorld(e.target.value)} value={selectedWorld}>
-                  {availableWorlds.map(w => (
-                      <option key={w.id} value={w.id}>{w.name}</option>
-                  ))}
-                  <option value="NEW">+ Create New World</option>
-                </select>
+        {/* Left Sidebar for Login */}
+        <div className="login-sidebar">
+            <h1>GAOL</h1>
+            
+            <div className="login-box">
+              {/* toggles between join and create modes */}
+              <div className="toggle-bar">
+                 <button 
+                   className={`toggle-btn ${loginMode === 'join' ? 'active' : ''}`}
+                   onClick={()=>setLoginMode('join')}
+                 >
+                   JOIN ROOM
+                 </button>
+                 <button 
+                   className={`toggle-btn ${loginMode === 'create' ? 'active' : ''}`}
+                   onClick={()=>setLoginMode('create')}
+                 >
+                   CREATE ROOM
+                 </button>
               </div>
 
-              {/* inputs specific to new world creation */}
-              {selectedWorld === 'NEW' && (
-                 <>
-                   <div className="form-row">
-                     <label className="login-label">New World Name</label>
-                     <input placeholder="e.g. Middle Earth" onChange={e => setNewWorldName(e.target.value)} />
-                   </div>
-                   <div className="form-row">
-                    <label className="login-label">Setting</label>
-                    <input placeholder="e.g. High Fantasy" onChange={e => setSetting(e.target.value)} />
-                  </div>
-                  <div className="form-row">
-                    <label className="login-label">Realism</label>
-                    <select onChange={e => setRealism(e.target.value)} value={realism}>
-                      <option value="High">High</option>
-                      <option value="Mid">Mid</option>
-                      <option value="Low">Low</option>
-                    </select>
-                  </div>
-                  {/* Map Scale Selection */}
-                  <div className="form-row">
-                    <label className="login-label">Map Size</label>
-                    <select onChange={e => setWorldSize(e.target.value)} value={worldSize}>
-                      <option value="Small">Small (512 x 256)</option>
-                      <option value="Medium">Medium (1000 x 500)</option>
-                      <option value="Large">Large (2048 x 1024)</option>
-                    </select>
-                  </div>
-                 </>
-              )}
-              
-              {/* Optional Password Field */}
               <div className="form-row">
-                  <label className="login-label">Password (Optional)</label>
-                  <input 
-                    type="password"
-                    placeholder="Leave empty for public"
-                    value={createPassword}
-                    onChange={e => setCreatePassword(e.target.value)}
-                  />
+                <label className="login-label">Username</label>
+                <input placeholder="e.g. Shadowhawk30" onChange={e => setUsername(e.target.value)} />
               </div>
 
-              {/* Custom API Key Input */}
               <div className="form-row">
-                <label className="login-label" style={{color: 'var(--terminal-green)'}}>
-                  Gemini API Key
-                </label>
+                <label className="login-label">Room Code</label>
                 <input 
-                    placeholder={serverHasKey ? "Server Key Active (Optional)" : "REQUIRED"}
-                    value={customApiKey}
-                    onChange={e => setCustomApiKey(e.target.value)}
-                    type="password"
-                    style={{
-                        borderColor: (!customApiKey && !serverHasKey) ? 'var(--alert-red)' : 'var(--accent-dim)'
-                    }}
+                    placeholder="e.g. 1987" 
+                    value={room} 
+                    onChange={e => setRoom(e.target.value)} 
                 />
               </div>
-            </>
-          )}
 
-          <button 
-            className="action-btn"
-            onClick={loginMode === 'join' ? handleJoin : handleCreate}
-          >
-            {loginMode === 'join' ? 'ENTER' : 'INITIALIZE'}
-          </button>
-          
-          {/* error or status feedback */}
-          <div style={{color:'red', marginTop:'10px', fontSize:'0.8rem', textAlign:'center'}}>
-            {statusMsg !== 'System Ready...' ? statusMsg : ''}
-          </div>
+              {/* conditional rendering for creation inputs */}
+              {loginMode === 'create' && (
+                <>
+                  <div className="form-row">
+                    <label className="login-label">World</label>
+                    <select onChange={e => setSelectedWorld(e.target.value)} value={selectedWorld}>
+                      {availableWorlds.map(w => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                      <option value="NEW">+ Create New World</option>
+                    </select>
+                  </div>
 
-          {/* Active Rooms Table */}
-          {loginMode === 'join' && activeRooms.length > 0 && (
-              <div className="room-list-container">
-                  <h3>Available Rooms</h3>
-                  <table className="room-table">
-                      <thead>
-                          <tr>
-                              <th>ID</th>
-                              <th>World</th>
-                              <th>#</th>
-                              <th>API</th>
-                              <th>Action</th>
-                          </tr>
-                      </thead>
-                      <tbody>
-                          {activeRooms.map(r => (
-                              <tr key={r.id}>
-                                  <td style={{color: 'var(--accent-gold)'}}>{r.id}</td>
-                                  <td>{r.world}</td>
-                                  <td>{r.player_count}/6</td>
-                                  <td>
-                                      {/* visual indicators for key availability */}
-                                      {r.has_custom_key ? (
-                                          <span style={{color:'var(--terminal-green)', fontWeight:'bold'}}>SELF</span>
-                                      ) : (
-                                          serverHasKey ? (
-                                              <span style={{color:'#444'}}>SYS</span>
-                                          ) : (
-                                              <span style={{color:'var(--alert-red)', fontWeight:'bold'}}>ERR</span>
-                                          )
-                                      )}
-                                  </td>
-                                  <td style={{textAlign:'right'}}>
-                                      <button 
-                                          className="join-sm-btn"
-                                          onClick={() => handleQuickJoin(r.id)}
-                                      >
-                                          {r.is_private ? "LOCKED" : "JOIN"}
-                                      </button>
-                                  </td>
-                              </tr>
-                          ))}
-                      </tbody>
-                  </table>
+                  {/* inputs specific to new world creation */}
+                  {selectedWorld === 'NEW' && (
+                     <>
+                       <div className="form-row">
+                         <label className="login-label">New World Name</label>
+                         <input placeholder="e.g. Middle Earth" onChange={e => setNewWorldName(e.target.value)} />
+                       </div>
+                       <div className="form-row">
+                        <label className="login-label">Setting</label>
+                        <input placeholder="e.g. High Fantasy" onChange={e => setSetting(e.target.value)} />
+                      </div>
+                      <div className="form-row">
+                        <label className="login-label">Realism</label>
+                        <select onChange={e => setRealism(e.target.value)} value={realism}>
+                          <option value="High">High</option>
+                          <option value="Mid">Mid</option>
+                          <option value="Low">Low</option>
+                        </select>
+                      </div>
+                      {/* Map Scale Selection */}
+                      <div className="form-row">
+                        <label className="login-label">Map Size</label>
+                        <select onChange={e => setWorldSize(e.target.value)} value={worldSize}>
+                          <option value="Small">Small (512 x 256)</option>
+                          <option value="Medium">Medium (1000 x 500)</option>
+                          <option value="Large">Large (2048 x 1024)</option>
+                        </select>
+                      </div>
+                     </>
+                  )}
+                  
+                  {/* Optional Password Field */}
+                  <div className="form-row">
+                      <label className="login-label">Password (Optional)</label>
+                      <input 
+                        type="password"
+                        placeholder="Leave empty for public"
+                        value={createPassword}
+                        onChange={e => setCreatePassword(e.target.value)}
+                      />
+                  </div>
+
+                  {/* Custom API Key Input */}
+                  <div className="form-row">
+                    <label className="login-label" style={{color: 'var(--terminal-green)'}}>
+                      Gemini API Key
+                    </label>
+                    <input 
+                        placeholder={serverHasKey ? "Server Key Active (Optional)" : "REQUIRED"}
+                        value={customApiKey}
+                        onChange={e => setCustomApiKey(e.target.value)}
+                        type="password"
+                        style={{
+                            borderColor: (!customApiKey && !serverHasKey) ? 'var(--alert-red)' : 'var(--accent-dim)'
+                        }}
+                    />
+                  </div>
+                </>
+              )}
+
+              <button 
+                className="action-btn"
+                onClick={loginMode === 'join' ? handleJoin : handleCreate}
+              >
+                {loginMode === 'join' ? 'ENTER' : 'INITIALIZE'}
+              </button>
+              
+              {/* error or status feedback */}
+              <div style={{color:'red', marginTop:'10px', fontSize:'0.8rem', textAlign:'center'}}>
+                {statusMsg !== 'System Ready...' ? statusMsg : ''}
               </div>
-          )}
 
+              {/* Active Rooms Table */}
+              {loginMode === 'join' && activeRooms.length > 0 && (
+                  <div className="room-list-container">
+                      <h3>Available Rooms</h3>
+                      <table className="room-table">
+                          <thead>
+                              <tr>
+                                  <th>ID</th>
+                                  <th>World</th>
+                                  <th>#</th>
+                                  <th>API</th>
+                                  <th>Action</th>
+                              </tr>
+                          </thead>
+                          <tbody>
+                              {activeRooms.map(r => (
+                                  <tr key={r.id}>
+                                      <td style={{color: 'var(--accent-gold)'}}>{r.id}</td>
+                                      <td>{r.world}</td>
+                                      <td>{r.player_count}/6</td>
+                                      <td>
+                                          {/* visual indicators for key availability */}
+                                          {r.has_custom_key ? (
+                                              <span style={{color:'var(--terminal-green)', fontWeight:'bold'}}>SELF</span>
+                                          ) : (
+                                              serverHasKey ? (
+                                                  <span style={{color:'#444'}}>SYS</span>
+                                              ) : (
+                                                  <span style={{color:'var(--alert-red)', fontWeight:'bold'}}>ERR</span>
+                                              )
+                                          )}
+                                      </td>
+                                      <td style={{textAlign:'right'}}>
+                                          <button 
+                                              className="join-sm-btn"
+                                              onClick={() => handleQuickJoin(r.id)}
+                                          >
+                                              {r.is_private ? "LOCKED" : "JOIN"}
+                                          </button>
+                                      </td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              )}
+
+            </div>
+        </div>
+        
+        {/* Right Splash Area Placeholder */}
+        <div className="login-splash">
+           {/* Future Splash Content */}
         </div>
 
-        {/* Footer for About and Data */}
+        {/* Footer for About and Data - Moved outside sidebar */}
         <div className="login-footer">
              <button className="footer-btn" onClick={() => setShowAbout(true)}>ABOUT</button>
              <button className="footer-btn" onClick={() => setStatusMsg("Data features coming soon...")}>DATA</button>
@@ -644,12 +666,24 @@ function App() {
           />
       ))}
 
-      {/* New Navigation Panel */}
+      {/* Left Navigation Panel */}
       <div className="nav-panel">
           {/* Leave Button */}
           <button className="nav-btn leave-btn" onClick={handleLeave} title="Leave Room">
              LEAVE
           </button>
+          {/* Admin Model Switcher */}
+          {isAdmin && (
+              <button className="nav-btn model-btn" onClick={() => setShowModelModal(true)} title="Change AI Model">
+                 MODEL
+              </button>
+          )}
+          {/* Admin Injection Button */}
+          {isAdmin && (
+              <button className="nav-btn god-mode-btn" onClick={() => setShowOverrideModal(true)} title="God Mode">
+                 GOD
+              </button>
+          )}
       </div>
 
       {/* Left side: Chat, Input, Dice */}
@@ -660,7 +694,8 @@ function App() {
 
         <div className="chat-window">
             {/* embark button only visible to admin in pre-game */}
-            {messages.length === 0 && isAdmin && !isEmbarking && (
+            {/* FIX: Filter out System messages so model changes don't hide the embark button */}
+            {nonSystemMessages.length === 0 && isAdmin && !isEmbarking && (
                 <div className="embark-overlay">
                     <button 
                         className="embark-btn" 
@@ -674,7 +709,8 @@ function App() {
             )}
             
             {/* waiting text for non-admins */}
-            {messages.length === 0 && !isAdmin && (
+            {/* FIX: Filter out System messages so model changes don't hide the waiting text */}
+            {nonSystemMessages.length === 0 && !isAdmin && (
                 <div className="embark-overlay">
                     <div style={{color:'#666', fontStyle:'italic'}}>
                         {isReady ? "Waiting for host to start..." : "Fill out character sheet..."}
@@ -705,7 +741,8 @@ function App() {
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendAction()}
             placeholder="Describe your action..."
-            disabled={messages.length === 0} 
+            /* FIX: Filter out System messages so model changes don't enable chat too early */
+            disabled={nonSystemMessages.length === 0} 
           />
           {/* Dice - Eventually we'll have frames to animate this rolling process */}
           <div className="dice-display">
@@ -748,38 +785,19 @@ function App() {
           <div className="tab-bar">
              <button 
                className={`tab-btn ${activeTab === 'character' ? 'active' : ''}`}
-               onClick={() => {setActiveTab('character'); setShowOverride(false);}}
+               onClick={() => {setActiveTab('character'); setShowOverrideModal(false);}}
              >
                CHARACTER SHEET
              </button>
              <button 
                className={`tab-btn ${activeTab === 'world' ? 'active' : ''}`}
-               onClick={() => {setActiveTab('world'); setShowOverride(false);}}
+               onClick={() => {setActiveTab('world'); setShowOverrideModal(false);}}
              >
                WORLD SHEET
              </button>
           </div>
 
           {activeTab === 'character' ? (
-              // Check if we are in Override View mode
-              showOverride ? (
-                  <div className="override-view">
-                      <div className="override-header">GOD MODE</div>
-                      <div style={{color:'#666', fontSize:'0.75rem', marginBottom:'5px', fontStyle:'italic', textAlign:'center'}}>
-                         Inject story overrides for the next turn.
-                      </div>
-                      <textarea 
-                        className="override-textarea"
-                        placeholder="e.g. 'Force a dragon attack' or 'Make the chest a mimic'."
-                        value={overrideText}
-                        onChange={e => setOverrideText(e.target.value)}
-                      />
-                      <div className="override-actions">
-                          <button className="ready-btn" style={{flex:1, background:'#333'}} onClick={() => setShowOverride(false)}>CANCEL</button>
-                          <button className="ready-btn" style={{flex:1, background:'var(--alert-red)'}} onClick={sendOverride}>INJECT</button>
-                      </div>
-                  </div>
-              ) : (
                   <>
                     <div className="detail-row">
                         <div className="detail-header">
@@ -861,17 +879,9 @@ function App() {
                                     </div>
                                 )
                             )}
-                            
-                            {/* Admin Override Button*/}
-                            {isAdmin && isOwnSheet && isReady && (
-                                <button className="dm-tools-btn" onClick={() => setShowOverride(true)}>
-                                   DM OVERRIDE
-                                </button>
-                            )}
                         </div>
                     </div>
                   </>
-              )
           ) : (
               <div className="world-sheet">
                  {/* displays world info if loaded */}
@@ -962,6 +972,55 @@ function App() {
           )}
         </div>
       </div>
+      
+        {/* Model Selection Modal - MOVED TO ROOT */}
+        {showModelModal && (
+             <div className="about-modal-overlay">
+                 <div className="about-modal-box">
+                      <h2 style={{color:'#b080ff', borderColor:'#3a2a55'}}>NEURAL SHIFT</h2>
+                      <p style={{color:'#666', marginBottom:'15px', fontStyle:'italic'}}>Select the active intelligence model.</p>
+                      
+                      <div className="model-list">
+                          {['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'].map(m => (
+                              <button 
+                                key={m}
+                                className={`model-option-btn ${currentModel === m ? 'active' : ''}`}
+                                onClick={() => handleModelChange(m)}
+                              >
+                                  <span>{m}</span>
+                                  {currentModel === m && <span style={{color:'#b080ff'}}>●</span>}
+                              </button>
+                          ))}
+                      </div>
+                      
+                      <button className="join-sm-btn" style={{width: '100%', marginTop: '20px', borderColor:'#333', color:'#555'}} onClick={() => setShowModelModal(false)}>CANCEL</button>
+                 </div>
+             </div>
+        )}
+        
+        {/* Admin Override Modal - MOVED TO ROOT */}
+        {showOverrideModal && (
+             <div className="about-modal-overlay">
+                 <div className="about-modal-box">
+                      <h2 style={{color:'var(--alert-red)', borderColor:'#330000'}}>GOD MODE</h2>
+                      <p style={{color:'#666', marginBottom:'15px', fontStyle:'italic', textAlign:'center'}}>
+                         Inject story overrides for the next turn.
+                      </p>
+                      <textarea 
+                        className="override-textarea"
+                        placeholder="e.g. 'Force a dragon attack' or 'Make the chest a mimic'."
+                        value={overrideText}
+                        onChange={e => setOverrideText(e.target.value)}
+                        style={{width: '100%', height:'150px'}}
+                      />
+                      <div className="override-actions" style={{width:'100%', marginTop:'15px'}}>
+                          <button className="ready-btn" style={{flex:1, background:'#333', color:'#888'}} onClick={() => setShowOverrideModal(false)}>CANCEL</button>
+                          <button className="ready-btn" style={{flex:1, background:'var(--alert-red)', color:'#000'}} onClick={sendOverride}>INJECT</button>
+                      </div>
+                 </div>
+             </div>
+        )}
+
     </div>
   );
 }
