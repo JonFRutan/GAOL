@@ -187,6 +187,7 @@ class Player:
     def __init__(self, sid, username):
         self.sid = sid              #socket ID of the player for unique validations
         self.username = username    #username of the player / name of their character
+        self.connect = True         #track connection status for refreshes
         self.hp = 100               #health of the character, starts at 100, 0 is dead.
         self.status = "Healthy"     #e.g. Healthy, Wounded, Unconscious, Dead. Player starts "Healthy"
         self.inventory = []         #inventory of the character (NOTE: This is unused at the moment)
@@ -1115,8 +1116,6 @@ def on_leave(data):
     if room_id and room_id in games:
         #trigger the standard disconnect logic
         socket_leave_room(room_id)
-        #reuse logic from disconnect handler by calling it directly or mimicking
-        #for simplicity, we just trigger the logic here
         game = games[room_id]
         if game.admin_sid == sid:
             emit('room_closed', {'msg': 'The host has ended the session.'}, room=room_id)
@@ -1152,17 +1151,19 @@ def on_disconnect():
         game = games[room_id]
         if sid in game.players:
             # Check if the disconnecting player is the host (admin)
-            if game.admin_sid == sid:
-                # Emit to all players in the room that the host left
-                emit('room_closed', {'msg': 'The host has left.'}, room=room_id)
-                print(f"Host left. Deleting room: {room_id}")
-                del games[room_id]
-                save_rooms()
-                return
+            p = game.players[sid]
+            p.connected = False
+            #if game.admin_sid == sid:
+            #    # Emit to all players in the room that the host left
+            #    emit('room_closed', {'msg': 'The host has left.'}, room=room_id)
+            #    print(f"Host left. Deleting room: {room_id}")
+            #    del games[room_id]
+            #    save_rooms()
+            #    return
 
-            name = game.players[sid].username
-            game.remove_player(sid)
-            emit('status', {'msg': f'{name} disconnected.'}, room=room_id)
+            #name = game.players[sid].username
+            #game.remove_player(sid)
+            #emit('status', {'msg': f'{name} disconnected.'}, room=room_id)
 
             #delete a room if it's empty
             if len(game.players) == 0:
@@ -1194,6 +1195,68 @@ def on_disconnect():
             #check if the game was waiting on this person
             if game.is_started and len(game.players) > 0 and game.all_players_acted():
                 process_turn(room_id)
+
+#handle user rejoin (refreshing the page, losing connection etc.)
+@socketio.on('rejoin')
+def handle_rejoin(data):
+    username = data.get('username')
+    room_id = data.get('room')
+    new_sid = request.sid
+    
+    if room_id in games:
+        game = games[room_id]
+        
+        #find the player object by username
+        target_player = next((p for p in game.players.values() if p.username == username), None)
+        
+        if target_player:
+            old_sid = target_player.sid
+            
+            #were they the room admin?
+            was_admin = (game.admin_sid == old_sid)
+            
+            #replace old sid with new one
+            if old_sid in game.players:
+                del game.players[old_sid]
+            
+            target_player.sid = new_sid
+            target_player.connected = True
+            game.players[new_sid] = target_player
+            
+            join_room(room_id)
+            
+            #if they were an admin, regrant them admin privileges
+            if was_admin:
+                game.admin_sid = new_sid
+                print(f"[ADMIN] Host {username} reconnected. Admin privileges restored.")
+                
+            current_world = worlds[game.world_id]
+            
+            #emit Success with the is_admin flag
+            emit('join_success', {
+                'room': room_id, 
+                'world': current_world.name,
+                'world_details': current_world.to_dict(), 
+                'is_admin': was_admin,  #explicitly send the captured status
+                'history': game.history if game.is_started else []
+            }, room=new_sid)
+            
+            emit('status', {'msg': f'{username} reconnected.'}, room=room_id)
+            
+            #emit the party state immediately so the grid repopulates
+            game_state_export = [
+                {
+                    'name': p.username, 'hp': p.hp, 'status': p.status, 
+                    'has_acted': p.has_acted, 'is_ready': p.is_ready, 
+                    'tags': p.tags, 'ambition': p.ambition, 'secret': p.secret, 'description': p.description
+                } 
+                for p in game.players.values()
+            ]
+            emit('game_state_update', game_state_export, room=room_id)
+            return
+
+    #if rejoin fails, force them back to login
+    emit('room_closed', {'msg': 'Session expired or invalid.'}, room=new_sid)
 
 #handling player ready status in lobby
 @socketio.on('player_ready')
@@ -1347,6 +1410,114 @@ def handle_model_change(data):
     except Exception as e:
         print(f"[ERROR] Failed to switch model: {e}")
         emit('status', {'msg': 'Error switching model.'}, room=sid)
+
+#updating api key
+@socketio.on('update_api_key')
+def handle_update_api_key(data):
+    room = data['room']
+    new_key = data['new_key']
+    sid = request.sid
+
+    if room not in games: return
+    game = games[room]
+
+    #verify sender is the admin
+    if game.admin_sid != sid:
+        emit('status', {'msg': 'UNAUTHORIZED.'}, room=sid)
+        return
+    
+    game.custom_api_key = new_key
+    emit('status', {'msg': 'API Key Updated for Session.'}, room=sid)
+
+#promoting a player to admin
+@socketio.on('promote_player')
+def handle_promote_player(data):
+    room = data['room']
+    target_name = data['target_name']
+    revoke_key = data.get('revoke_key', False)
+    sid = request.sid
+
+    if room not in games: return
+    game = games[room]
+
+    if game.admin_sid != sid: return
+
+    #find target sid
+    target_sid = None
+    for psid, p in game.players.items():
+        if p.username == target_name:
+            target_sid = psid
+            break
+    
+    if target_sid:
+        #update admin ref
+        game.admin_sid = target_sid
+        
+        #handle key revocation
+        if revoke_key:
+            game.custom_api_key = None
+            emit('status', {'msg': 'Previous Admin revoked the API Key.'}, room=room)
+
+        #notify old admin
+        emit('admin_update', {'is_admin': False}, room=sid)
+        #notify new admin
+        emit('admin_update', {'is_admin': True}, room=target_sid)
+        #notify room
+        emit('status', {'msg': f'ADMIN TRANSFERRED TO {target_name}'}, room=room)
+        
+        #Update room list data (since key might have changed)
+        save_rooms()
+
+        game_state_export = [
+            {
+                'name': p.username, 'hp': p.hp, 'status': p.status, 
+                'has_acted': p.has_acted, 'is_ready': p.is_ready, 
+                'tags': p.tags, 'ambition': p.ambition, 'secret': p.secret, 'description': p.description
+            } 
+            for p in game.players.values()
+        ]
+        emit('game_state_update', game_state_export, room=room)
+
+#kicking a player
+@socketio.on('kick_player')
+def handle_kick_player(data):
+    room = data['room']
+    target_name = data['target_name']
+    sid = request.sid
+    
+    if room not in games: return
+    game = games[room]
+    
+    if game.admin_sid != sid: return
+    
+    #find target
+    target_sid = None
+    for psid, p in game.players.items():
+        if p.username == target_name:
+            target_sid = psid
+            break
+    
+    if target_sid:
+        #emit specific kick event to target
+        emit('kicked', {'msg': 'You have been kicked by the host.'}, room=target_sid)
+        
+        #remove them using standard logic
+        game.remove_player(target_sid)
+        emit('status', {'msg': f'{target_name} was kicked.'}, room=room)
+        
+        save_players()
+        save_rooms()
+        
+        #update state
+        game_state_export = [
+            {
+                'name': p.username, 'hp': p.hp, 'status': p.status, 
+                'has_acted': p.has_acted, 'is_ready': p.is_ready, 
+                'tags': p.tags, 'ambition': p.ambition, 'secret': p.secret, 'description': p.description
+            } 
+            for p in game.players.values()
+        ]
+        emit('game_state_update', game_state_export, room=room)
         
 #handling player actions
 @socketio.on('player_action')

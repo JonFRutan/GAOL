@@ -7,6 +7,7 @@
   --accent-dim: #5c4806;
   --terminal-green: #00ff41;
   --alert-red: #ff3333;
+  --tech-cyan: #00e5ff; /* Added for Key Button */
 }
 
 * { box-sizing: border-box; }
@@ -50,7 +51,7 @@ body {
     z-index: 20;
 }
 
-/*  Splash Area  */
+/* Splash Area  */
 .login-splash {
     flex-grow: 1;
     background: #000;
@@ -301,6 +302,19 @@ button {
     background: #b080ff;
     color: #000;
     box-shadow: 0 0 10px rgba(176, 128, 255, 0.4);
+}
+
+/* NEW: API Key Button */
+.nav-btn.key-btn {
+    color: var(--tech-cyan);
+    border-color: #004d55;
+    font-size: 0.6rem;
+}
+
+.nav-btn.key-btn:hover {
+    background: var(--tech-cyan);
+    color: #000;
+    box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
 }
 
 /* NEW: God Mode Button */
@@ -647,6 +661,47 @@ button {
     font-weight: bold;
     border-radius: 2px;
     z-index: 5;
+}
+
+/* card overlay for admin controls */
+.card-admin-overlay {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    display: flex;
+    gap: 4px;
+    z-index: 15;
+}
+
+.admin-control-btn {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: none;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.7rem;
+    padding: 0;
+}
+
+/* kick button */
+.admin-control-btn.kick {
+    background: var(--alert-red);
+    color: #000;
+}
+.admin-control-btn.kick:hover {
+    background: #ff6666;
+}
+
+/* promote button */
+.admin-control-btn.promote {
+    background: var(--tech-cyan);
+    color: #000;
+}
+.admin-control-btn.promote:hover {
+    background: #80f2ff;
 }
 
 /* Empty Slots */
@@ -1112,4 +1167,32 @@ button {
     font-size: 0.8rem;
     color: #aaa;
     line-height: 1.4;
+}
+
+/* Custom Checkbox Styling */
+.custom-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: #000;
+    border: 1px solid var(--tech-cyan);
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    display: grid;
+    place-content: center;
+    margin: 0;
+}
+
+.custom-checkbox::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    transform: scale(0);
+    background-color: var(--tech-cyan);
+    transition: 120ms transform ease-in-out;
+    box-shadow: 0 0 5px var(--tech-cyan);
+}
+
+.custom-checkbox:checked::before {
+    transform: scale(1);
 }

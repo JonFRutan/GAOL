@@ -88,11 +88,38 @@ function App() {
   const [showModelModal, setShowModelModal] = useState(false);
   const [currentModel, setCurrentModel] = useState('gemini-2.5-flash-lite');
 
+  //state for key update modal (feature request 1)
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [newKeyInput, setNewKeyInput] = useState('');
+
+  //state for promotion modal (feature request 2)
+  const [showPromoteModal, setShowPromoteModal] = useState(false);
+  const [promoteTarget, setPromoteTarget] = useState('');
+  const [revokeKeyOnPromote, setRevokeKeyOnPromote] = useState(false);
+
+  const [showKickModal, setShowKickModal] = useState(false);
+  const [kickTarget, setKickTarget] = useState('');
+
   //checks local storage for a previously saved api key on mount
   useEffect(() => {
     const savedKey = localStorage.getItem('gaol_api_key');
     if (savedKey) {
         setCustomApiKey(savedKey);
+    }
+    
+    //attempt to rejoin if a session exists in local storage
+    const savedSession = localStorage.getItem('gaol_session');
+    if (savedSession) {
+        try {
+            const session = JSON.parse(savedSession);
+            if (session.username && session.room) {
+                console.log("Attempting Rejoin:", session);
+                setUsername(session.username); //restore username state
+                socket.emit('rejoin', { username: session.username, room: session.room });
+            }
+        } catch (e) {
+            localStorage.removeItem('gaol_session');
+        }
     }
   }, []);
 
@@ -134,6 +161,8 @@ function App() {
       setShowPwdModal(false);
       setIsEmbarking(false); // reset embark state
       setShowOverrideModal(false); // reset override state
+      
+      localStorage.setItem('gaol_session', JSON.stringify({ username: username, room: data.room }));
     });
 
     //handle room closure by host
@@ -146,6 +175,7 @@ function App() {
         setIsAdmin(false);
         setStatusMsg(data.msg);
         setIsEmbarking(false);
+        localStorage.removeItem('gaol_session'); //clear session
     });
 
     //updates world lore/events when ai triggers a change
@@ -156,6 +186,30 @@ function App() {
         setPendingRoom(data.room);
         setStatusMsg("Restricted Access: Password Required.");
         setShowPwdModal(true);
+    });
+
+    //handle being kicked
+    socket.on('kicked', (data) => {
+        setGameState('login');
+        setRoom('');
+        setMessages([]);
+        setPartyStats([]);
+        setIsReady(false);
+        setIsAdmin(false);
+        setStatusMsg(data.msg);
+        setIsEmbarking(false);
+        localStorage.removeItem('gaol_session'); //clear session
+    });
+
+    //handle admin status update (transfer)
+    socket.on('admin_update', (data) => {
+        if(data.is_admin) {
+            setIsAdmin(true);
+            setStatusMsg("You are now the Admin.");
+        } else {
+            setIsAdmin(false);
+            setStatusMsg("Admin privileges revoked.");
+        }
     });
 
     //request initial data on mount
@@ -183,9 +237,11 @@ function App() {
       socket.off('world_update');
       socket.off('room_closed');
       socket.off('password_required');
+      socket.off('kicked');
+      socket.off('admin_update');
       clearInterval(roomPollInterval); //clear interval
     };
-  }, [gameState]); //dependency on gameState ensuring interval respects login status
+  }, [gameState, username]); //dependency on gameState ensuring interval respects login status
 
   //auto-scrolls to the bottom of chat when new messages arrive
   useEffect(() => {
@@ -241,6 +297,7 @@ function App() {
       setIsReady(false);
       setIsAdmin(false);
       setStatusMsg("Disconnected.");
+      localStorage.removeItem('gaol_session'); // clear session explicitly
   };
 
   //Submit password from modal
@@ -386,6 +443,48 @@ function App() {
       socket.emit('change_model', { room, model: modelName });
       setCurrentModel(modelName);
       setShowModelModal(false);
+  };
+
+  //inputting a new api key
+  const submitNewKey = () => {
+      if(newKeyInput.trim().length > 10) {
+          socket.emit('update_api_key', { room, new_key: newKeyInput });
+          setShowKeyModal(false);
+          setNewKeyInput('');
+      } else {
+          //simple validation feedback
+          setStatusMsg("Invalid Key Length.");
+      }
+  };
+
+  //kicking a player
+  const handleKick = (targetName, e) => {
+      e.stopPropagation(); //prevent selecting the card
+      setKickTarget(targetName);
+      setShowKickModal(true);
+  };
+
+  const confirmKick = () => {
+       socket.emit('kick_player', { room, target_name: kickTarget });
+       setShowKickModal(false);
+  };
+
+  //promotion modal
+  const handlePromote = (targetName, e) => {
+      e.stopPropagation(); //prevent selecting the card
+      setPromoteTarget(targetName);
+      setRevokeKeyOnPromote(false); //default unchecked
+      setShowPromoteModal(true);
+  };
+  
+  //submit promotions
+  const submitPromote = () => {
+      socket.emit('promote_player', { 
+          room, 
+          target_name: promoteTarget, 
+          revoke_key: revokeKeyOnPromote 
+      });
+      setShowPromoteModal(false);
   };
 
   //check to see if everyone is ready so embark button can be enabled
@@ -599,7 +698,7 @@ function App() {
            {/* Future Splash Content */}
         </div>
 
-        {/* Footer for About and Data - Moved outside sidebar */}
+        {/* Login page Footer */}
         <div className="login-footer">
              <button className="footer-btn" onClick={() => setShowAbout(true)}>ABOUT</button>
              <button className="footer-btn" onClick={() => setStatusMsg("Data features coming soon...")}>DATA</button>
@@ -678,6 +777,12 @@ function App() {
                  MODEL
               </button>
           )}
+          {/* Admin API Key Button (New Feature) */}
+          {isAdmin && (
+              <button className="nav-btn key-btn" onClick={() => setShowKeyModal(true)} title="Update API Key">
+                 KEY
+              </button>
+          )}
           {/* Admin Injection Button */}
           {isAdmin && (
               <button className="nav-btn god-mode-btn" onClick={() => setShowOverrideModal(true)} title="God Mode">
@@ -694,7 +799,6 @@ function App() {
 
         <div className="chat-window">
             {/* embark button only visible to admin in pre-game */}
-            {/* FIX: Filter out System messages so model changes don't hide the embark button */}
             {nonSystemMessages.length === 0 && isAdmin && !isEmbarking && (
                 <div className="embark-overlay">
                     <button 
@@ -709,7 +813,6 @@ function App() {
             )}
             
             {/* waiting text for non-admins */}
-            {/* FIX: Filter out System messages so model changes don't hide the waiting text */}
             {nonSystemMessages.length === 0 && !isAdmin && (
                 <div className="embark-overlay">
                     <div style={{color:'#666', fontStyle:'italic'}}>
@@ -767,8 +870,16 @@ function App() {
               <div className="mini-stat">HP: {p.hp}</div>
               <div className="mini-stat">{p.status}</div>
               {/* shows ready tag if in lobby, or acted tag if in game */}
-              {((messages.length === 0 && p.is_ready) || (messages.length > 0 && p.has_acted)) && (
+              {((nonSystemMessages.length === 0 && p.is_ready) || (nonSystemMessages.length > 0 && p.has_acted)) && (
                   <div className="ready-indicator">READY</div>
+              )}
+
+              {/* Admin Controls On Cards*/}
+              {isAdmin && p.name !== username && (
+                  <div className="card-admin-overlay">
+                      <button className="admin-control-btn promote" onClick={(e) => handlePromote(p.name, e)} title="Promote to Admin">^</button>
+                      <button className="admin-control-btn kick" onClick={(e) => handleKick(p.name, e)} title="Kick Player">x</button>
+                  </div>
               )}
             </div>
           ))}
@@ -973,7 +1084,7 @@ function App() {
         </div>
       </div>
       
-        {/* Model Selection Modal - MOVED TO ROOT */}
+        {/* Model Selection Modal */}
         {showModelModal && (
              <div className="about-modal-overlay">
                  <div className="about-modal-box">
@@ -998,7 +1109,7 @@ function App() {
              </div>
         )}
         
-        {/* Admin Override Modal - MOVED TO ROOT */}
+        {/* Admin Override Modal */}
         {showOverrideModal && (
              <div className="about-modal-overlay">
                  <div className="about-modal-box">
@@ -1019,6 +1130,71 @@ function App() {
                       </div>
                  </div>
              </div>
+        )}
+
+        {/* API Key Update Modal */}
+        {showKeyModal && (
+            <div className="about-modal-overlay">
+                <div className="about-modal-box">
+                    <h2 style={{color:'var(--tech-cyan)', borderColor:'#004d55'}}>API CONFIG</h2>
+                    <p style={{color:'#666', marginBottom:'15px', fontStyle:'italic'}}>Update the session API Key.</p>
+                    <input 
+                        className="sheet-input"
+                        type="password"
+                        placeholder="New API Key..."
+                        value={newKeyInput}
+                        onChange={e => setNewKeyInput(e.target.value)}
+                        style={{textAlign: 'center', borderColor: 'var(--tech-cyan)', color: 'var(--tech-cyan)'}}
+                    />
+                    <div style={{display:'flex', gap:'10px', width:'100%', marginTop:'20px'}}>
+                        <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setShowKeyModal(false)}>CANCEL</button>
+                        <button className="join-sm-btn" style={{flex:1, borderColor:'var(--tech-cyan)', color:'var(--tech-cyan)'}} onClick={submitNewKey}>UPDATE</button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Promotion Confirmation Modal */}
+        {showPromoteModal && (
+            <div className="about-modal-overlay">
+                <div className="about-modal-box">
+                    <h2 style={{color:'var(--tech-cyan)', borderColor:'#004d55'}}>TRANSFER ADMIN</h2>
+                    <p style={{color:'#ccc', marginBottom:'15px', textAlign:'center'}}>
+                        Are you sure you want to promote <b>{promoteTarget}</b>?
+                    </p>
+                    <div style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'20px'}}>
+                         <input 
+                            type="checkbox" 
+                            id="revokeCheck" 
+                            className="custom-checkbox"
+                            checked={revokeKeyOnPromote}
+                            onChange={e => setRevokeKeyOnPromote(e.target.checked)}
+                         />
+                         <label htmlFor="revokeCheck" style={{color:'#888', fontSize:'0.9rem', cursor:'pointer'}}>
+                            Revoke my API Key (New admin must provide one)
+                         </label>
+                    </div>
+                    <div style={{display:'flex', gap:'10px', width:'100%'}}>
+                        <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setShowPromoteModal(false)}>CANCEL</button>
+                        <button className="join-sm-btn" style={{flex:1, borderColor:'var(--tech-cyan)', color:'var(--tech-cyan)'}} onClick={submitPromote}>CONFIRM</button>
+                    </div>
+                </div>
+            </div>
+        )}
+      {/* Kick Confirmation Modal */}
+        {showKickModal && (
+            <div className="about-modal-overlay">
+                <div className="about-modal-box">
+                    <h2 style={{color:'var(--alert-red)', borderColor:'#330000'}}>KICK PLAYER</h2>
+                    <p style={{color:'#ccc', marginBottom:'15px', textAlign:'center'}}>
+                        Are you sure you want to remove <b>{kickTarget}</b> from the session?
+                    </p>
+                    <div style={{display:'flex', gap:'10px', width:'100%', marginTop:'10px'}}>
+                        <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setShowKickModal(false)}>CANCEL</button>
+                        <button className="join-sm-btn" style={{flex:1, borderColor:'var(--alert-red)', color:'var(--alert-red)'}} onClick={confirmKick}>REMOVE</button>
+                    </div>
+                </div>
+            </div>
         )}
 
     </div>
