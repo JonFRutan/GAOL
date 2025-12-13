@@ -1,7 +1,7 @@
 #jfr
-print("------------------------------ GAOL v1.1 ------------------------------")
+print("------------------------------ GAOL v1.2 ------------------------------")
 import os, json, random, string, time, re
-import traceback # Added for deep debugging
+import traceback
 import google.generativeai as genai
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room as socket_leave_room
@@ -99,8 +99,12 @@ class World:
         self.characters = []                                                             #list of characters within the world
 
     #adds a new event to the major events of the planet
-    def add_event(self, event_text):
-        self.major_events.append(event_text)
+    def add_event(self, event_data):
+        #handle legacy string inputs or simple text updates by converting to dict
+        if isinstance(event_data, str):
+            event_data = {"title": "Historical Event", "description": event_data}
+            
+        self.major_events.append(event_data)
         if len(self.major_events) > 20: 
             self.major_events.pop(0)
         
@@ -342,7 +346,16 @@ class RelevanceEngine:
         total_events = len(world.major_events)
         for i, event in enumerate(world.major_events):
             score = 0
-            event_words = RelevanceEngine.extract_keywords(event)
+            
+            #check if event is a dict (new format) or string (old format)
+            if isinstance(event, dict):
+                text_content = f"{event.get('title', '')} {event.get('description', '')}"
+                display_text = f"[History] {event.get('title', 'Event')}: {event.get('description', '')}"
+            else:
+                text_content = event
+                display_text = f"[History] {event}"
+
+            event_words = RelevanceEngine.extract_keywords(text_content)
             score += len(event_words.intersection(context_keywords))
             
             #recency bias (events at end of list get higher base score)
@@ -355,7 +368,7 @@ class RelevanceEngine:
                 final_score += 10 
 
             scored_items.append({
-                'text': f"[History] {event}",
+                'text': display_text,
                 'score': final_score
             })
             
@@ -387,7 +400,15 @@ def load_worlds():
                     w_data['description']
                 )
                 w.id = w_data['id'] #overwrite random id
-                w.major_events = w_data['major_events']
+                
+                #handle major_events. If they are strings, convert to dicts.
+                w.major_events = []
+                if 'major_events' in w_data:
+                    for evt in w_data['major_events']:
+                        if isinstance(evt, str):
+                             w.add_event({"title": "Historical Event", "description": evt})
+                        else:
+                             w.add_event(evt)
                 
                 #load entities if they exist
                 if 'entities' in w_data:
@@ -514,7 +535,7 @@ def generate_ai_response(game_room, is_embark=False):
         2. WORLD GENERATION TASK:
            - SCAN all player descriptions, tags, and secrets for named entities (Gods, Patrons, Factions) that are missing from the World Context.
            - Generate a 'new_entities' entry for EACH one found.
-           - IMPERATIVE: Use type="God" for deities/patrons, type="Faction" for guilds/groups. 
+           - IMPERATIVE: Use type="Deity" for Major Gods/Higher Beings, type="God" for lesser idols/demigods, and type="Faction" for guilds/groups.
            - Provide a brief description for them based on the player's text.
         """
         current_actions = "The party is ready to begin."
@@ -560,6 +581,7 @@ def generate_ai_response(game_room, is_embark=False):
     4. **WORLD BUILDING:** If the story introduces a NEW important Faction, City, Landmark, or NPC, you MUST create them in the JSON output.
        - Do not create entities for trivial things (e.g. "a wooden chair"). Only persistent lore.
        - "new_entities" are for Factions, Cities, Landmarks, or Deities.
+       - **DISTINGUISH DEITIES:** Use type="Deity" for supreme cosmic beings. Use type="God" for lesser idols or demigods.
        - "new_characters" are for named NPCs present in the scene.
     5. Return ONLY a JSON object with this exact schema:
     
@@ -568,10 +590,12 @@ def generate_ai_response(game_room, is_embark=False):
       "updates": {{
          "PlayerName": {{ "hp_change": -10, "status": "Wounded", "tags_update": ["Undead"], "description": "New appearance" }}
       }},
-      "world_updates": ["The King has been assassinated."],
+      "world_updates": [
+          {{ "title": "King Assassinated", "description": "The King has been killed by the Iron Legion." }}
+      ],
       "new_entities": [
           {{ "name": "The Iron Legion", "type": "Faction", "description": "A mercenary army.", "keywords": ["war", "mercenary", "iron"] }},
-          {{ "name": "Solara", "type": "God", "description": "Goddess of the sun.", "keywords": ["light", "sun", "holy"] }}
+          {{ "name": "Solara", "type": "Deity", "description": "High Goddess of the sun.", "keywords": ["light", "sun", "holy"] }}
       ],
       "new_characters": [
           {{ "name": "Garrick", "role": "Blacksmith", "affiliation": "Iron Legion", "description": "A gruff dwarf." }}
@@ -1216,7 +1240,7 @@ def handle_action(data):
             'has_acted': p.has_acted, 
             'is_ready': p.is_ready, 
             'tags': p.tags, 
-            'ambition': p.ambition,
+            'ambition': p.ambition, 
             'secret': p.secret,
             'description': p.description
         } 

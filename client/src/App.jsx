@@ -353,7 +353,7 @@ function App() {
   const allPlayersReady = partyStats.length > 0 && partyStats.every(p => p.is_ready);
   
   //filters for world sheet tabs
-  const getGods = () => {
+  const getDeities = () => {
       if(!worldData || !worldData.entities) return [];
       return worldData.entities.filter(e => 
           e.type.toLowerCase().includes('god') || e.type.toLowerCase().includes('deity')
@@ -366,6 +366,10 @@ function App() {
           e.type.toLowerCase().includes('faction') || e.type.toLowerCase().includes('guild')
       );
   };
+
+  //Determine if character sheet prompt should be active (gold particle glow)
+  //Active if: Game has not started (messages.length === 0) AND User is not ready AND Viewing Character tab AND Viewing own sheet
+  const showSheetPrompt = !isReady && messages.length === 0 && activeTab === 'character' && isOwnSheet;
 
   //render logic for the initial login/lobby screen
   if (gameState === 'login') {
@@ -544,7 +548,7 @@ function App() {
                         <p>GAOL is a multiplayer AI storyteller experience.</p>
                         <p>Inspired by <i>AI Dungeon</i> and <i>Death by AI</i>, I sought to recreate the multiplayer experience with a rich, evolving world.</p>
                         <p>Create a room, define your setting, and embark on a collaborative storytelling journey with friends.</p>
-                        <p><a href="https://github.com/JonFRutan/GAOL">GitHub</a> || <a href="https://www.linkedin.com/in/jonathanrutan/">LinkedIn</a> || <a href="https://jfelix.space">jfelix</a></p>
+                        <p><a href="[https://github.com/JonFRutan/GAOL](https://github.com/JonFRutan/GAOL)">GitHub</a> || <a href="[https://www.linkedin.com/in/jonathanrutan/](https://www.linkedin.com/in/jonathanrutan/)">LinkedIn</a> || <a href="[https://jfelix.space](https://jfelix.space)">jfelix</a></p>
                       </div>
                       <button className="join-sm-btn" style={{width: '100%', marginTop: '20px'}} onClick={() => setShowAbout(false)}>CLOSE</button>
                  </div>
@@ -747,7 +751,8 @@ function App() {
                         </div>
                     </div>
                     
-                    <div className="sheet-columns">
+                    {/* conditionally applies the particle glow if user needs to fill sheet */}
+                    <div className={`sheet-columns ${showSheetPrompt ? 'sheet-attention-glow' : ''}`}>
                         <div className="sheet-left">
                             <label style={{fontSize:'0.7rem', color:'#666', marginBottom:'5px'}}>CHARACTER SUMMARY</label>
                             {/* editable only if it is users sheet and they aren't locked in */}
@@ -847,7 +852,7 @@ function App() {
                         {/* World Sub-Tabs */}
                         <div className="sub-tab-bar">
                             <button className={`sub-tab-btn ${worldTab === 'history' ? 'active' : ''}`} onClick={()=>setWorldTab('history')}>HISTORY</button>
-                            <button className={`sub-tab-btn ${worldTab === 'gods' ? 'active' : ''}`} onClick={()=>setWorldTab('gods')}>GODS</button>
+                            <button className={`sub-tab-btn ${worldTab === 'gods' ? 'active' : ''}`} onClick={()=>setWorldTab('gods')}>DEITIES</button>
                             <button className={`sub-tab-btn ${worldTab === 'factions' ? 'active' : ''}`} onClick={()=>setWorldTab('factions')}>FACTIONS</button>
                         </div>
 
@@ -856,14 +861,18 @@ function App() {
                             {worldTab === 'history' && (
                                 worldData.major_events && worldData.major_events.length > 0 ? (
                                     worldData.major_events.map((e, i) => (
-                                        <div key={i} className="event-item">- {e}</div>
+                                        <div key={i} className="entity-item">
+                                            <div className="entity-name">{typeof e === 'string' ? 'Event Log' : e.title}</div>
+                                            <div className="entity-type">History</div>
+                                            <div className="entity-desc">{typeof e === 'string' ? e : e.description}</div>
+                                        </div>
                                     ))
                                 ) : <div style={{color:'#555'}}>No major history yet.</div>
                             )}
 
                             {worldTab === 'gods' && (
-                                getGods().length > 0 ? (
-                                    getGods().map((e, i) => (
+                                getDeities().length > 0 ? (
+                                    getDeities().map((e, i) => (
                                         <div key={i} className="entity-item">
                                             <div className="entity-name">{e.name}</div>
                                             <div className="entity-type">{e.type}</div>

@@ -657,7 +657,40 @@ button {
     gap: 20px;
     height: 100%;
     overflow: hidden;
+    padding: 10px; /* added padding to account for glow border */
 }
+
+/* Sheet Attention Glow (Gold Particles/Energy) */
+.sheet-attention-glow {
+    position: relative;
+    border: 1px dashed var(--accent-gold);
+    box-shadow: 0 0 15px rgba(255, 193, 7, 0.2);
+    animation: goldPulse 2s infinite;
+}
+
+/* Pseudo element for the moving particle/energy effect */
+.sheet-attention-glow::before {
+    content: '';
+    position: absolute;
+    top: -2px; left: -2px; right: -2px; bottom: -2px;
+    background: linear-gradient(45deg, transparent 40%, var(--accent-gold) 50%, transparent 60%);
+    background-size: 200% 200%;
+    z-index: -1;
+    opacity: 0.5;
+    animation: particleShimmer 3s linear infinite;
+}
+
+@keyframes goldPulse {
+    0% { box-shadow: 0 0 10px rgba(255, 193, 7, 0.1); border-color: rgba(255, 193, 7, 0.4); }
+    50% { box-shadow: 0 0 25px rgba(255, 193, 7, 0.4); border-color: rgba(255, 193, 7, 1); }
+    100% { box-shadow: 0 0 10px rgba(255, 193, 7, 0.1); border-color: rgba(255, 193, 7, 0.4); }
+}
+
+@keyframes particleShimmer {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 100% 50%; }
+}
+
 
 .sheet-left {
     flex: 1;
@@ -786,6 +819,7 @@ button {
 .world-events-list::-webkit-scrollbar-thumb { background: #333; }
 .world-events-list::-webkit-scrollbar-track { background: #000; }
 
+/* Reused entity-item style for consistency, but kept event-item for legacy if needed */
 .event-item {
     margin-bottom: 8px;
 }
