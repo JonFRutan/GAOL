@@ -62,6 +62,10 @@ function App() {
   //visual state for the d20 roll
   const [lastRoll, setLastRoll] = useState(null);
   
+  //admin override state
+  const [overrideText, setOverrideText] = useState('');
+  const [showOverride, setShowOverride] = useState(false); // New Toggle for admin view
+  
   //toggles right panel view between character sheet and world info
   const [activeTab, setActiveTab] = useState('character'); 
   //toggles sub-tabs within the world sheet
@@ -121,6 +125,7 @@ function App() {
       setJoinPassword(''); // clear password on success
       setShowPwdModal(false);
       setIsEmbarking(false); // reset embark state
+      setShowOverride(false); // reset override state
     });
 
     //handle room closure by host
@@ -203,6 +208,21 @@ function App() {
       socket.emit('join', { username, room });
       setSelectedPlayer(username);
     }
+  };
+  
+  //cleanly handle the leave room button
+  const handleLeave = () => {
+      if(room) {
+          socket.emit('leave_room', { room });
+      }
+      // Reset local state
+      setGameState('login');
+      setRoom('');
+      setMessages([]);
+      setPartyStats([]);
+      setIsReady(false);
+      setIsAdmin(false);
+      setStatusMsg("Disconnected.");
   };
 
   //Submit password from modal
@@ -318,6 +338,15 @@ function App() {
       socket.emit('player_action', { username, room, message: inputValue, roll: roll });
       setInputValue('');
     }
+  };
+
+  //sends admin override to server
+  const sendOverride = () => {
+      if (overrideText.trim()) {
+          socket.emit('submit_override', { room, text: overrideText });
+          setOverrideText('');
+          setShowOverride(false); // return to normal view
+      }
   };
 
   //check to see if everyone is ready so embark button can be enabled
@@ -567,6 +596,14 @@ function App() {
           />
       ))}
 
+      {/* New Navigation Panel */}
+      <div className="nav-panel">
+          {/* Leave Button */}
+          <button className="nav-btn leave-btn" onClick={handleLeave} title="Leave Room">
+             LEAVE
+          </button>
+      </div>
+
       {/* Left side: Chat, Input, Dice */}
       <div className="left-panel">
         <div className={`status-ticker ${statusMsg.includes('THINKING') ? 'thinking' : ''}`}>
@@ -601,10 +638,10 @@ function App() {
           {messages.map((m, i) => (
             <div key={i} className={`message-block ${m.sender === 'Gaol' ? 'gaol-msg' : 'player-msg'}`}>
               <div className="msg-header">
-                {m.sender === 'Gaol' ? 'GAOL:' : 'Actions:'}
+                {m.sender === 'Gaol' ? 'GAOL:' : (m.sender === 'System' ? 'SYS:' : 'Actions:')}
               </div>
-              <div className="msg-body">
-                {m.sender !== 'Gaol' && <span className="player-name">{m.sender}<br></br></span>}
+              <div className="msg-body" style={{color: m.sender === 'System' ? '#555' : 'inherit', fontStyle: m.sender === 'System' ? 'italic' : 'normal'}}>
+                {m.sender !== 'Gaol' && m.sender !== 'System' && <span className="player-name">{m.sender}<br></br></span>}
                 {m.text}
               </div>
             </div>
@@ -663,102 +700,129 @@ function App() {
           <div className="tab-bar">
              <button 
                className={`tab-btn ${activeTab === 'character' ? 'active' : ''}`}
-               onClick={() => setActiveTab('character')}
+               onClick={() => {setActiveTab('character'); setShowOverride(false);}}
              >
                CHARACTER SHEET
              </button>
              <button 
                className={`tab-btn ${activeTab === 'world' ? 'active' : ''}`}
-               onClick={() => setActiveTab('world')}
+               onClick={() => {setActiveTab('world'); setShowOverride(false);}}
              >
                WORLD SHEET
              </button>
           </div>
 
           {activeTab === 'character' ? (
-              <>
-                <div className="detail-row">
-                    <div className="detail-header">
-                        <h2>{displayedPlayer.name}</h2>
-                        <div className="detail-stats">
-                            <div>Health: {displayedPlayer.hp} / 100</div>
-                            <div>Status: {displayedPlayer.status}</div>
-                        </div>
-                    </div>
-                    {/* dynamic icon based on setting/realism first letters */}
-                    <div className="portrait-small">
-                        {setting ? setting[0] : '?'}{realism ? realism[0] : '?'}
-                    </div>
-                </div>
-                
-                <div className="sheet-columns">
-                    <div className="sheet-left">
-                        <label style={{fontSize:'0.7rem', color:'#666', marginBottom:'5px'}}>CHARACTER SUMMARY</label>
-                        {/* editable only if it is users sheet and they aren't locked in */}
-                        <textarea 
-                            style={{flexGrow:1, resize:'none'}}
-                            placeholder="Briefly describe your character..." 
-                            value={isOwnSheet ? userDescription : (displayedPlayer.description || '')}
-                            onChange={e => isOwnSheet && setUserDescription(e.target.value)}
-                            disabled={!isOwnSheet || (isOwnSheet && isReady)} 
-                        />
-                    </div>
-                    <div className="sheet-right">
-                        <div style={{marginBottom: '10px'}}>
-                            <div style={{display:'flex', justifyContent:'space-between'}}>
-                                <label style={{fontSize:'0.7rem', color:'#666'}}>TAGS</label>
-                                <span className="input-instruction">{isOwnSheet ? "Max 5" : ""}</span>
+              // Check if we are in Override View mode
+              showOverride ? (
+                  <div className="override-view">
+                      <div className="override-header">GOD MODE</div>
+                      <div style={{color:'#666', fontSize:'0.75rem', marginBottom:'5px', fontStyle:'italic', textAlign:'center'}}>
+                         Inject story overrides for the next turn.
+                      </div>
+                      <textarea 
+                        className="override-textarea"
+                        placeholder="e.g. 'Force a dragon attack' or 'Make the chest a mimic'."
+                        value={overrideText}
+                        onChange={e => setOverrideText(e.target.value)}
+                      />
+                      <div className="override-actions">
+                          <button className="ready-btn" style={{flex:1, background:'#333'}} onClick={() => setShowOverride(false)}>CANCEL</button>
+                          <button className="ready-btn" style={{flex:1, background:'var(--alert-red)'}} onClick={sendOverride}>INJECT</button>
+                      </div>
+                  </div>
+              ) : (
+                  <>
+                    <div className="detail-row">
+                        <div className="detail-header">
+                            <h2>{displayedPlayer.name}</h2>
+                            <div className="detail-stats">
+                                <div>Health: {displayedPlayer.hp} / 100</div>
+                                <div>Status: {displayedPlayer.status}</div>
                             </div>
-                            <input 
-                                className="sheet-input"
-                                placeholder="e.g. Human, Warrior, Strong" 
-                                value={isOwnSheet ? tagsInput : (displayedPlayer.tags ? displayedPlayer.tags.join(', ') : '')}
-                                onChange={e => isOwnSheet && setTagsInput(e.target.value)}
+                        </div>
+                        {/* dynamic icon based on setting/realism first letters */}
+                        <div className="portrait-small">
+                            {setting ? setting[0] : '?'}{realism ? realism[0] : '?'}
+                        </div>
+                    </div>
+                    
+                    <div className="sheet-columns">
+                        <div className="sheet-left">
+                            <label style={{fontSize:'0.7rem', color:'#666', marginBottom:'5px'}}>CHARACTER SUMMARY</label>
+                            {/* editable only if it is users sheet and they aren't locked in */}
+                            <textarea 
+                                style={{flexGrow:1, resize:'none'}}
+                                placeholder="Briefly describe your character..." 
+                                value={isOwnSheet ? userDescription : (displayedPlayer.description || '')}
+                                onChange={e => isOwnSheet && setUserDescription(e.target.value)}
                                 disabled={!isOwnSheet || (isOwnSheet && isReady)} 
                             />
                         </div>
-                        <div style={{marginBottom: '10px'}}>
-                            <label style={{fontSize:'0.7rem', color:'#666'}}>AMBITION</label>
-                            <input 
-                                className="sheet-input"
-                                placeholder="e.g. Become King" 
-                                value={isOwnSheet ? ambitionInput : (displayedPlayer.ambition || '')}
-                                onChange={e => isOwnSheet && setAmbitionInput(e.target.value)}
-                                disabled={!isOwnSheet || (isOwnSheet && isReady)} 
-                            />
-                        </div>
-                        <div style={{flexGrow: 1, display:'flex', flexDirection:'column', marginBottom:'10px'}}>
-                            <label style={{fontSize:'0.7rem', color:'#666'}}>SECRET</label>
-                            {/* secrets are hidden for other players */}
-                            {isOwnSheet ? (
-                                <textarea 
-                                    style={{flexGrow:1, background:'#000', border:'1px solid #333', color:'var(--text-main)', padding:'8px', outline:'none', resize:'none', fontSize:'0.9rem'}}
-                                    placeholder="Hidden info..." 
-                                    value={secretInput}
-                                    onChange={e => setSecretInput(e.target.value)}
-                                    disabled={isReady} 
-                                />
-                            ) : (
-                                <div className="secret-mask">
-                                    What secrets may {displayedPlayer.name} hold?
+                        <div className="sheet-right">
+                            <div style={{marginBottom: '10px'}}>
+                                <div style={{display:'flex', justifyContent:'space-between'}}>
+                                    <label style={{fontSize:'0.7rem', color:'#666'}}>TAGS</label>
+                                    <span className="input-instruction">{isOwnSheet ? "Max 5" : ""}</span>
                                 </div>
+                                <input 
+                                    className="sheet-input"
+                                    placeholder="e.g. Human, Warrior, Strong" 
+                                    value={isOwnSheet ? tagsInput : (displayedPlayer.tags ? displayedPlayer.tags.join(', ') : '')}
+                                    onChange={e => isOwnSheet && setTagsInput(e.target.value)}
+                                    disabled={!isOwnSheet || (isOwnSheet && isReady)} 
+                                />
+                            </div>
+                            <div style={{marginBottom: '10px'}}>
+                                <label style={{fontSize:'0.7rem', color:'#666'}}>AMBITION</label>
+                                <input 
+                                    className="sheet-input"
+                                    placeholder="e.g. Become King" 
+                                    value={isOwnSheet ? ambitionInput : (displayedPlayer.ambition || '')}
+                                    onChange={e => isOwnSheet && setAmbitionInput(e.target.value)}
+                                    disabled={!isOwnSheet || (isOwnSheet && isReady)} 
+                                />
+                            </div>
+                            <div style={{flexGrow: 1, display:'flex', flexDirection:'column', marginBottom:'10px'}}>
+                                <label style={{fontSize:'0.7rem', color:'#666'}}>SECRET</label>
+                                {/* secrets are hidden for other players */}
+                                {isOwnSheet ? (
+                                    <textarea 
+                                        style={{flexGrow:1, background:'#000', border:'1px solid #333', color:'var(--text-main)', padding:'8px', outline:'none', resize:'none', fontSize:'0.9rem'}}
+                                        placeholder="Hidden info..." 
+                                        value={secretInput}
+                                        onChange={e => setSecretInput(e.target.value)}
+                                        disabled={isReady} 
+                                    />
+                                ) : (
+                                    <div className="secret-mask">
+                                        What secrets may {displayedPlayer.name} hold?
+                                    </div>
+                                )}
+                            </div>
+                            {/* confirm button logic */}
+                            {isOwnSheet && (
+                                !isReady ? (
+                                    <button className="ready-btn" onClick={handleReady} style={{width:'100%', padding:'10px'}}>
+                                        CONFIRM & READY
+                                    </button>
+                                ) : (
+                                    <div style={{textAlign:'center', color:'var(--terminal-green)', border:'1px solid var(--terminal-green)', padding:'5px', fontSize:'0.8rem', fontWeight:'bold'}}>
+                                        LOCKED IN
+                                    </div>
+                                )
+                            )}
+                            
+                            {/* Admin Override Button*/}
+                            {isAdmin && isOwnSheet && isReady && (
+                                <button className="dm-tools-btn" onClick={() => setShowOverride(true)}>
+                                   DM OVERRIDE
+                                </button>
                             )}
                         </div>
-                        {/* confirm button logic */}
-                        {isOwnSheet && (
-                            !isReady ? (
-                                <button className="ready-btn" onClick={handleReady} style={{width:'100%', padding:'10px'}}>
-                                    CONFIRM & READY
-                                </button>
-                            ) : (
-                                <div style={{textAlign:'center', color:'var(--terminal-green)', border:'1px solid var(--terminal-green)', padding:'5px', fontSize:'0.8rem', fontWeight:'bold'}}>
-                                    LOCKED IN
-                                </div>
-                            )
-                        )}
                     </div>
-                </div>
-              </>
+                  </>
+              )
           ) : (
               <div className="world-sheet">
                  {/* displays world info if loaded */}

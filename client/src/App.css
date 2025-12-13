@@ -211,13 +211,115 @@ button {
     line-height: 1.6;
 }
 
-/* primary layout*/
+/* primary layout - 3 Columns: Nav | Chat | Sheet */
+/* RESTORED RIGHT PANEL RATIO: 60px | 2 parts | 1 part */
 .main-layout {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 60px 2fr 1fr;
   height: 100vh;
   width: 100vw;
   border-top: 2px solid var(--accent-dim);
+}
+
+/* Navigation Panel (New) */
+.nav-panel {
+  background: #080808;
+  border-right: 2px solid var(--accent-dim);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0;
+  gap: 15px;
+}
+
+.nav-btn {
+    width: 50px; /* Slightly wider to fit text */
+    height: 40px;
+    border: 1px solid #333;
+    background: transparent;
+    color: #555;
+    font-size: 0.7rem; /* Smaller font for text */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.nav-btn:hover {
+    color: var(--accent-gold);
+    border-color: var(--accent-gold);
+}
+
+/* Leave Button Specific */
+.nav-btn.leave-btn {
+    /* REMOVED MARGIN-TOP AUTO so it stays at top */
+    color: var(--alert-red);
+    border-color: #330000;
+    font-size: 0.6rem;
+}
+
+.nav-btn.leave-btn:hover {
+    background: var(--alert-red);
+    color: #000;
+}
+
+/* Admin Override View Styles (inside Right Panel) */
+.override-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 10px;
+}
+
+.override-header {
+  color: var(--alert-red);
+  font-weight: bold;
+  border-bottom: 1px solid #333;
+  margin-bottom: 10px;
+  padding-bottom: 5px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.override-textarea {
+  flex-grow: 1;
+  background: #000;
+  border: 1px solid #333;
+  color: var(--text-main);
+  padding: 10px;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+}
+
+.override-textarea:focus { border-color: var(--alert-red); }
+
+.override-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Admin Button on Sheet */
+.dm-tools-btn {
+    margin-top: 10px;
+    width: 100%;
+    padding: 8px;
+    background: transparent;
+    border: 1px dashed var(--alert-red);
+    color: var(--alert-red);
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-weight: bold;
+}
+
+.dm-tools-btn:hover {
+    background: rgba(255, 51, 51, 0.1);
 }
 
 /* left panel*/
@@ -262,7 +364,7 @@ button {
   flex-direction: column;
   gap: 15px;
   min-height: 0;
-  position: relative; /* for embark overlay */
+  position: relative;
 }
 
 /* custom scrollbar for the chat logs */
@@ -417,7 +519,7 @@ button {
   text-align: center;
   transition: all 0.2s;
   position: relative;
-  cursor: pointer; /* Clickable */
+  cursor: pointer;
 }
 
 /* Hover state */
@@ -452,7 +554,7 @@ button {
 .ready-indicator {
     position: absolute;
     bottom: 5px;
-    right: 5px; /* Moved to bottom right corner */
+    right: 5px;
     background: var(--terminal-green);
     color: #000;
     font-size: 0.7rem;
@@ -466,20 +568,20 @@ button {
 .mini-card.empty {
   border: 1px dashed #333;
   background: transparent;
-  cursor: default; /* Not clickable */
+  cursor: default;
 }
 .empty-slot { color: #333; font-size: 0.8rem; }
 
 /* Detail View */
 .detail-view {
-  flex: 1; /* Takes all remaining space */
+  flex: 1;
   padding: 20px;
   display: flex;
   flex-direction: column;
   background: #0a0a0a;
   color: var(--accent-gold);
-  height: 100%; /* Ensure it fills parent */
-  overflow: hidden; /* Lock overflow to handle inner scrolling */
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Tab Bar Styling */
@@ -487,7 +589,7 @@ button {
     display: flex;
     margin-bottom: 15px;
     border-bottom: 1px solid #333;
-    flex-shrink: 0; /* Prevent header from squishing */
+    flex-shrink: 0;
 }
 
 .tab-btn {
@@ -554,7 +656,7 @@ button {
     display: flex;
     gap: 20px;
     height: 100%;
-    overflow: hidden; /* Internal scrolling handled by textareas */
+    overflow: hidden;
 }
 
 .sheet-left {
@@ -592,7 +694,7 @@ button {
     margin-bottom: 5px;
 }
 
-/* single line inputs for sheet */
+/* Single line inputs for sheet */
 .sheet-input {
     width: 100%;
     background: #000;
@@ -629,7 +731,7 @@ button {
     display: flex;
     flex-direction: column;
     height: 100%;
-    overflow: hidden; /* Contain children */
+    overflow: hidden;
 }
 
 .world-header {
@@ -669,15 +771,15 @@ button {
     flex-shrink: 0;
 }
 
-/* SCROLLABLE EVENTS LIST */
+/* Scrollable Events List */
 .world-events-list {
-    flex-grow: 1; /* Takes remaining space */
-    overflow-y: auto; /* Activates scrollbar */
+    flex-grow: 1;
+    overflow-y: auto;
     font-size: 0.85rem;
     color: #aaa;
     border-top: 1px solid #333;
     padding-top: 10px;
-    padding-right: 5px; /* Spacing for scrollbar */
+    padding-right: 5px;
 }
 
 .world-events-list::-webkit-scrollbar { width: 5px; }
@@ -753,7 +855,7 @@ button {
 
 .map-placeholder {
     width: 100%;
-    height: 120px; /* Reduced height to save space */
+    height: 120px;
     border: 2px dashed #333;
     background: #080808;
     display: flex;

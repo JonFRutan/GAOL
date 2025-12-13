@@ -1,9 +1,10 @@
 #jfr
+print("------------------------------ GAOL v1.1 ------------------------------")
 import os, json, random, string, time, re
 import traceback # Added for deep debugging
 import google.generativeai as genai
 from flask import Flask, render_template, request
-from flask_socketio import SocketIO, emit, join_room
+from flask_socketio import SocketIO, emit, join_room, leave_room as socket_leave_room
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -116,11 +117,13 @@ class World:
             
         new_entity = WorldEntity(name, type_tag, description, keywords)
         self.entities.append(new_entity)
+        print(f"[DEBUG] Entity Added to Memory: {name} ({type_tag})")
 
-    def add_character(self, name, description, role, affiliation):
+    #adding characters to the world entitites
+    def add_character(self, name, description, role, affiliation, status="Alive"):
         if any(c.name.lower() == name.lower() for c in self.characters):
             return
-        new_character = Character(name, description, role, affiliation)
+        new_character = Character(name, description, role, affiliation, status)
         self.characters.append(new_character)
     
     #helper to convert object to dict for json saving
@@ -212,6 +215,7 @@ class GameRoom:
         self.players = {}                       #dict: { sid: Player }
         self.is_started = False                 #has the room started the gameplay loop yet?
         self.admin_sid = None                   #track who the host is
+        self.dm_override = None                 #stores admin override instructions for next turn
 
     #add a player into the room.
     def add_player(self, sid, username):
@@ -374,6 +378,7 @@ def load_worlds():
         with open(WORLDS_FILE, 'r') as f:
             data = json.load(f)
             for w_id, w_data in data.items():
+                print(f"[DEBUG] Attempting to load world: {w_id}") #debug stuff
                 #defaults added for backward compatibility
                 w = World(
                     w_data['name'], 
@@ -398,12 +403,14 @@ def load_worlds():
                         c_role = c_data.get('role', 'NPC')
                         c_aff  = c_data.get('affiliation', 'None')
                         c_stat = c_data.get('status', 'Alive') 
+                        #this line was crashing before because World.add_character didn't accept status
                         w.add_character(c_data['name'], c_data['description'], c_role, c_aff, c_stat)
                 
                 worlds[w_id] = w
         print(f"[SYSTEM] Loaded {len(worlds)} worlds from storage.")
     except Exception as e:
-        print(f"Error loading worlds: {e}")
+        print(f"[CRITICAL ERROR] Error loading worlds: {e}") #debug stuff
+        traceback.print_exc() #debug stuff
 
 ##############################
 #       Saver Functions      #
@@ -415,6 +422,7 @@ def save_worlds():
         data = {w_id: w.to_dict() for w_id, w in worlds.items()}
         with open(WORLDS_FILE, 'w') as f:
             json.dump(data, f, indent=2)
+        print("[DEBUG] Worlds saved successfully.")
     except Exception as e:
         print(f"Error saving worlds: {e}")
 
@@ -459,6 +467,15 @@ def save_all_data():
     save_players()
     save_characters()
 
+#clean markdown from JSON responses
+def clean_json_response(text):
+    clean_text = text.strip()
+    if "```json" in clean_text:
+        clean_text = clean_text.replace("```json", "").replace("```", "")
+    elif "```" in clean_text:
+        clean_text = clean_text.replace("```", "")
+    return json.loads(clean_text)
+
 def generate_ai_response(game_room, is_embark=False):
     #fetching world context for prompt
     world_context = "Unknown World"
@@ -491,7 +508,6 @@ def generate_ai_response(game_room, is_embark=False):
 
     special_instructions = ""
     if is_embark:
-        # UPDATED: Reinforced instructions to catch Deities/Factions from player text
         special_instructions = """
         THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. 
         1. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). 
@@ -502,6 +518,15 @@ def generate_ai_response(game_room, is_embark=False):
            - Provide a brief description for them based on the player's text.
         """
         current_actions = "The party is ready to begin."
+    
+    #add the admin override if present
+    if game_room.dm_override:
+        special_instructions += f"""
+        \n*** URGENT ADMIN OVERRIDE ***
+        The Dungeon Master has explicitly commanded: {game_room.dm_override}
+        PRIORITIZE THIS OVERRIDE ABOVE ALL OTHER CONTEXT. 
+        If the Admin asks to change the world state, kill a player, or spawn an item, DO IT in your response.
+        """
 
     #schema enforcing prompt
     #the prompt below is quite complicated and contains A LOT of information.
@@ -627,40 +652,25 @@ def generate_ai_response(game_room, is_embark=False):
         #         /DEBUGGING         #
         #----------------------------#
 
-        return json.loads(response.text) #parse JSON string to Python Dict
+        return clean_json_response(response.text) #parse JSON string to Python Dict
     except Exception as e:
         print(f"AI Error: {e}")
         #return error directly to user instead of silent fallback
         return {"story_text": "Gaol has gone silent...", "updates": {}, "world_updates": []}
 
-#extracted turn processing so it can be triggered by disconnects or actions
-def process_turn(room_id):
-    if room_id not in games: return
-    game = games[room_id]
-    
-    #we compile all the player actions and their summaries to send in one block to the AI prompt
-    turn_summary = game.compile_turn_actions()
-    game.history.append({'sender': 'Party', 'text': turn_summary, 'type': 'story'})
-    emit('message', {'sender': 'Party', 'text': turn_summary}, room=room_id)
-    
-    #generate the AI response in the form of a JSON file
-    emit('status', {'msg': 'GAOL IS THINKING...'}, room=room_id)
-    
-    #small sleep to allow the frontend to update the status ticker before blocking
-    socketio.sleep(0.1)
-    
-    ai_data = generate_ai_response(game)
-    
-    #extract the story text to display on the console, and all the player object updates
-    story_text = ai_data.get('story_text', 'The DM remains silent.')
+#helper function to process AI updates
+def apply_ai_updates(game, ai_data, room_id):
     updates = ai_data.get('updates', {})
     world_updates  = ai_data.get('world_updates', [])
     new_entities   = ai_data.get('new_entities', [])
     new_characters = ai_data.get('new_characters', [])
+    
+    #debugging, sese if entites are being recognized
+    print(f"[DEBUG] Processing updates for Room {room_id}. Entities found: {len(new_entities)}")
 
-    #process all the new world updates.
     if game.world_id in worlds:
         world = worlds[game.world_id]
+        print(f"[DEBUG] World found in memory. Proceeding with updates...")
         
         try:
             #add new world events
@@ -693,6 +703,8 @@ def process_turn(room_id):
         except Exception as e:
             print(f"[CRITICAL ERROR] Failed to update world data: {e}")
             traceback.print_exc()
+    else:
+        print(f"[CRITICAL] World ID {game.world_id} NOT found in memory! Updates skipped.")
 
     #status changes to players takes effect
     for player_name, changes in updates.items():
@@ -711,6 +723,33 @@ def process_turn(room_id):
                 target_player.ambition = changes['ambition_update']
             if 'description' in changes:
                 target_player.description = changes['description']
+
+#extracted turn processing so it can be triggered by disconnects or actions
+def process_turn(room_id):
+    if room_id not in games: return
+    game = games[room_id]
+    
+    #we compile all the player actions and their summaries to send in one block to the AI prompt
+    turn_summary = game.compile_turn_actions()
+    game.history.append({'sender': 'Party', 'text': turn_summary, 'type': 'story'})
+    emit('message', {'sender': 'Party', 'text': turn_summary}, room=room_id)
+    
+    #generate the AI response in the form of a JSON file
+    emit('status', {'msg': 'GAOL IS THINKING...'}, room=room_id)
+    
+    #small sleep to allow the frontend to update the status ticker before blocking
+    socketio.sleep(0.1)
+    
+    ai_data = generate_ai_response(game)
+    apply_ai_updates(game, ai_data, room_id)
+    
+    #extract the story text to display on the console
+    story_text = ai_data.get('story_text', 'The DM remains silent.')
+    
+    #clear the admin override after it has been used
+    if game.dm_override:
+        print(f"[ADMIN] Clearing override for room {room_id}")
+        game.dm_override = None
 
     #display the current narrative to the room
     game.history.append({'sender': 'Gaol', 'text': story_text, 'type': 'story'})
@@ -846,10 +885,10 @@ def on_join(data):
     
     game = games[room]
     
-    # Password Protection Check
+    #password protection check
     if game.password and len(game.password) > 0:
         if game.password != req_password:
-            # Emit a specific event asking for password
+            #emit a specific event asking for password
             emit('password_required', {'room': room}, room=sid)
             return
 
@@ -931,6 +970,43 @@ def handle_get_rooms():
             'is_private': bool(g.password) # indicates if room is password protected
         })
     emit('room_list', room_data)
+
+#manual leave handler to avoid ghost sockets
+@socketio.on('leave_room')
+def on_leave(data):
+    sid = request.sid
+    room_id = data.get('room')
+    if room_id and room_id in games:
+        #trigger the standard disconnect logic
+        socket_leave_room(room_id)
+        #reuse logic from disconnect handler by calling it directly or mimicking
+        #for simplicity, we just trigger the logic here
+        game = games[room_id]
+        if game.admin_sid == sid:
+            emit('room_closed', {'msg': 'The host has ended the session.'}, room=room_id)
+            del games[room_id]
+            save_rooms()
+            return
+            
+        name = game.players[sid].username
+        game.remove_player(sid)
+        emit('status', {'msg': f'{name} has left the party.'}, room=room_id)
+        
+        if len(game.players) == 0:
+            del games[room_id]
+            save_rooms()
+        else:
+            save_players()
+            save_rooms()
+            game_state_export = [
+                {
+                    'name': p.username, 'hp': p.hp, 'status': p.status, 
+                    'has_acted': p.has_acted, 'is_ready': p.is_ready, 
+                    'tags': p.tags, 'ambition': p.ambition, 'secret': p.secret, 'description': p.description
+                } 
+                for p in game.players.values()
+            ]
+            emit('game_state_update', game_state_export, room=room_id)
 
 #handle when a player disconnects
 @socketio.on('disconnect')
@@ -1050,7 +1126,7 @@ def handle_embark(data):
     
     #generate the intro
     ai_data = generate_ai_response(game, is_embark=True)
-    
+    apply_ai_updates(game, ai_data, room)
     story_text = ai_data.get('story_text', 'The adventure begins...')
     
     #display the current narrative to the room
@@ -1078,6 +1154,34 @@ def handle_embark(data):
         for p in game.players.values()
     ]
     emit('game_state_update', game_state_export, room=room)
+
+#admin story injections
+@socketio.on('submit_override')
+def handle_admin_override(data):
+    room = data['room']
+    override_text = data['text']
+    sid = request.sid
+
+    if room not in games: return
+    game = games[room]
+    
+    #verify sender is the admin
+    if game.admin_sid != sid:
+        emit('status', {'msg': 'UNAUTHORIZED: Only the Admin can use God Mode.'}, room=sid)
+        return
+
+    game.dm_override = override_text
+    print(f"[ADMIN] Override set for Room {room}: {override_text}")
+    
+    #send confirmation status to Admin
+    emit('status', {'msg': 'GOD MODE ENABLED: Override queued for next turn.'}, room=sid)
+    
+    #broadcast whisper to the room chat
+    admin_name = game.players[sid].username
+    whisper_msg = {'sender': 'System', 'text': f'*{admin_name}* whispers to GAOL...', 'type': 'story'}
+    #append to history so it persists
+    game.history.append(whisper_msg)
+    emit('message', whisper_msg, room=room)
 
 #handling player actions
 @socketio.on('player_action')
@@ -1111,7 +1215,7 @@ def handle_action(data):
             'status': p.status, 
             'has_acted': p.has_acted, 
             'is_ready': p.is_ready, 
-            'tags': p.tags,
+            'tags': p.tags, 
             'ambition': p.ambition,
             'secret': p.secret,
             'description': p.description
