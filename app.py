@@ -1,5 +1,6 @@
 #jfr
 import os, json, random, string, time, re
+import traceback # Added for deep debugging
 import google.generativeai as genai
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room
@@ -104,9 +105,15 @@ class World:
         
     #adding a new entity to the world.
     def add_entity(self, name, type_tag, description, keywords=[]):
+        #safety check for keywords
+        if not isinstance(keywords, list):
+            keywords = []
+            
         #no duplicates
         if any(e.name.lower() == name.lower() for e in self.entities):
+            print(f"[LORE SKIP] Duplicate entity detected: {name}")
             return
+            
         new_entity = WorldEntity(name, type_tag, description, keywords)
         self.entities.append(new_entity)
 
@@ -188,6 +195,9 @@ class Character:
             'affiliation': self.affiliation,
             'status': self.status
         }
+    
+#NOTE: It would be cool store a bunch more classes of information such as "Faction", "Landmarks", "Cities" etc.
+#my concern is of course token sizing in our prompting, perhaps there is a way we can run an algorithm / function to determine relevant information to feed the prompt first?
 
 #stores information about the game room
 class GameRoom:
@@ -269,9 +279,9 @@ class GameRoom:
 #                          Helper Functions                            #
 ########################################################################
 
-#RelevanceEngine class
-#the purpose of this class is to allow for better scoping of context so that only relevant information is sent into the prompt
-#and to reduce unnecessary information from taking up token count in our prompting.
+# RelevanceEngine class
+# The purpose of this class is to allow for better scoping of context so that only relevant information is sent into the prompt
+# and to reduce unnecessary information from taking up token count in our prompting.
 class RelevanceEngine:
     #stop words are common word that aren't relevant to our prompting, and removing them helps minimize prompt bloat and improve both efficiency and information relevancy.
     STOP_WORDS = {
@@ -391,6 +401,7 @@ def load_worlds():
                         w.add_character(c_data['name'], c_data['description'], c_role, c_aff, c_stat)
                 
                 worlds[w_id] = w
+        print(f"[SYSTEM] Loaded {len(worlds)} worlds from storage.")
     except Exception as e:
         print(f"Error loading worlds: {e}")
 
@@ -480,7 +491,7 @@ def generate_ai_response(game_room, is_embark=False):
 
     special_instructions = ""
     if is_embark:
-        #reinforced instructions to catch Deities/Factions from player text
+        # UPDATED: Reinforced instructions to catch Deities/Factions from player text
         special_instructions = """
         THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. 
         1. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). 
@@ -562,7 +573,12 @@ def generate_ai_response(game_room, is_embark=False):
 
         response = model.generate_content(prompt, generation_config=generation_config) #generate response
         
-        #debug logging input and outputs
+        #----------------------------#
+        #          DEBUGGING         #
+        #----------------------------#
+        
+        #save the last raw response to disk as `./data/last_gen.json`
+        #used for examining issues or just to see what the AI is generating
         try:
             debug_dump = {
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -574,7 +590,7 @@ def generate_ai_response(game_room, is_embark=False):
         except Exception as e:
             print(f"[DEBUG ERROR] Could not dump last_gen: {e}")
 
-       #TOKEN AUDITING
+        #save token inputs and outputs alongside a timestamp to get an overview of token usage.
         if response.usage_metadata:
             input_tokens = response.usage_metadata.prompt_token_count
             output_tokens = response.usage_metadata.candidates_token_count
@@ -591,9 +607,9 @@ def generate_ai_response(game_room, is_embark=False):
                         try:
                             audit_data = json.load(f)
                         except json.JSONDecodeError:
-                            audit_data = [] # Start fresh if corrupted
+                            audit_data = [] #start fresh if corrupted
                 
-                #append new entry
+                #append the new entity
                 audit_data.append({
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "input": input_tokens,
@@ -606,6 +622,10 @@ def generate_ai_response(game_room, is_embark=False):
                     json.dump(audit_data, f, indent=2)
             except Exception as e:
                 print(f"[AUDIT ERROR] Could not save token audit: {e}")
+
+        #----------------------------#
+        #         /DEBUGGING         #
+        #----------------------------#
 
         return json.loads(response.text) #parse JSON string to Python Dict
     except Exception as e:
@@ -641,31 +661,39 @@ def process_turn(room_id):
     #process all the new world updates.
     if game.world_id in worlds:
         world = worlds[game.world_id]
-        #add new world events
-        for event in world_updates:
-            world.add_event(event)
-        #add new entities
-        for ent in new_entities:
-            world.add_entity(
-                ent.get('name', 'Unknown'),
-                ent.get('type', 'Location'),
-                ent.get('description', ''),
-                ent.get('keywords', [])
-            )
-            print(f"[LORE] Created Entity: {ent.get('name')}")
-        #add new characters
-        for char in new_characters:
-            world.add_character(
-                char.get('name', 'Unknown'),
-                char.get('description', ''),
-                char.get('role', 'NPC'),
-                char.get('affiliation', 'None')
-            )
-            print(f"[LORE] Created NPC: {char.get('name')}")
         
-        save_worlds() # Persist all new lore to /data/worlds.json
-        emit('world_update', world.to_dict(), room=room_id)
-    
+        try:
+            #add new world events
+            for event in world_updates:
+                world.add_event(event)
+            
+            #add new entities with robust parsing
+            for ent in new_entities:
+                world.add_entity(
+                    ent.get('name', 'Unknown'),
+                    ent.get('type', 'Location'),
+                    ent.get('description', ''),
+                    ent.get('keywords', [])
+                )
+                print(f"[LORE] Created Entity: {ent.get('name')} | Type: {ent.get('type')}")
+            
+            #add new characters
+            for char in new_characters:
+                world.add_character(
+                    char.get('name', 'Unknown'),
+                    char.get('description', ''),
+                    char.get('role', 'NPC'),
+                    char.get('affiliation', 'None')
+                )
+                print(f"[LORE] Created NPC: {char.get('name')}")
+            
+            save_worlds() # Persist all new lore to /data/worlds.json
+            emit('world_update', world.to_dict(), room=room_id)
+            
+        except Exception as e:
+            print(f"[CRITICAL ERROR] Failed to update world data: {e}")
+            traceback.print_exc()
+
     #status changes to players takes effect
     for player_name, changes in updates.items():
         #find the player by name
@@ -1100,17 +1128,12 @@ def handle_action(data):
     else:
         process_turn(room)
 
-load_worlds()
-
-#seed a default world if empty
-if not worlds:
-    default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
-    worlds[default_world.id] = default_world
-    save_worlds()
-
 if __name__ == "__main__":
     load_worlds() # load json on startup
-    #seed a default world
+    #this forces any schema updates (like adding missing 'entities' keys) to disk immediately.
+    save_worlds() 
+
+    #seed a default world if empty
     if not worlds:
         default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
         worlds[default_world.id] = default_world
