@@ -590,12 +590,12 @@ function App() {
                           <option value="Low">Low</option>
                         </select>
                       </div>
-                      {/* Map Scale Selection */}
+                      {/* map Scale Selection */}
                       <div className="form-row">
                         <label className="login-label">Map Size</label>
                         <select onChange={e => setWorldSize(e.target.value)} value={worldSize}>
                           <option value="Small">Small (512 x 256)</option>
-                          <option value="Medium">Medium (1000 x 500)</option>
+                          <option value="Medium">Medium (1024 x 512)</option>
                           <option value="Large">Large (2048 x 1024)</option>
                         </select>
                       </div>
