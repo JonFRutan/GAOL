@@ -188,9 +188,6 @@ class Character:
             'affiliation': self.affiliation,
             'status': self.status
         }
-    
-#NOTE: It would be cool store a bunch more classes of information such as "Faction", "Landmarks", "Cities" etc.
-#my concern is of course token sizing in our prompting, perhaps there is a way we can run an algorithm / function to determine relevant information to feed the prompt first?
 
 #stores information about the game room
 class GameRoom:
@@ -272,9 +269,9 @@ class GameRoom:
 #                          Helper Functions                            #
 ########################################################################
 
-# RelevanceEngine class
-# The purpose of this class is to allow for better scoping of context so that only relevant information is sent into the prompt
-# and to reduce unnecessary information from taking up token count in our prompting.
+#RelevanceEngine class
+#the purpose of this class is to allow for better scoping of context so that only relevant information is sent into the prompt
+#and to reduce unnecessary information from taking up token count in our prompting.
 class RelevanceEngine:
     #stop words are common word that aren't relevant to our prompting, and removing them helps minimize prompt bloat and improve both efficiency and information relevancy.
     STOP_WORDS = {
@@ -483,7 +480,7 @@ def generate_ai_response(game_room, is_embark=False):
 
     special_instructions = ""
     if is_embark:
-        # UPDATED: Reinforced instructions to catch Deities/Factions from player text
+        #reinforced instructions to catch Deities/Factions from player text
         special_instructions = """
         THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. 
         1. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). 
