@@ -86,17 +86,45 @@ class WorldEntity:
             "keywords": self.keywords
         }
 
+#spatial locations on the map
+class Location:
+    def __init__(self, name, type_tag, description, x, y, radius=1, affiliation="Independent", keywords=[]):
+        self.id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        self.name = name
+        self.type_tag = type_tag # e.g. "City", "Village", "Ruins"
+        self.description = description
+        self.x = x
+        self.y = y
+        self.radius = radius # Represents size/influence area
+        self.affiliation = affiliation # Who controls this?
+        self.keywords = keywords # For relevance engine
+    
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "type": self.type_tag,
+            "description": self.description,
+            "x": self.x,
+            "y": self.y,
+            "radius": self.radius,
+            "affiliation": self.affiliation,
+            "keywords": self.keywords
+        }
+
 #storing persistent world data, major events, setting, description, etc.
 class World:
-    def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm."):
+    def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm.", width=1000, height=500):
         self.id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))   #randomly generated ID to distinguish the world
         self.name = name                                                                 #name of the world (e.g. Middle Earth)
         self.setting = setting                                                           #world's setting (e.g. Cyberpunk metropolis)
         self.realism = realism                                                           #how realistic should the world behave? (High, Mid, Low) determines how wacky the world should behave
         self.description = description                                                   #description of the planet (THIS DOESN'T POPULATE OR DO ANYTHING AT THE MOMENT)
         self.major_events = []                                                           #a list of major world events that should remain persistent across playthroughs. (e.g. volcano covering planet with ash)
-        self.entities = []                                                               #list of WorldEntity objects
+        self.entities = []                                                               #list of WorldEntity objects (Abstract concepts: Factions, Gods)
         self.characters = []                                                             #list of characters within the world
+        self.locations = []                                                              #list of Location objects (Physical places with coordinates)
+        self.width = width                                                               #Arbitrary world width
+        self.height = height                                                             #Arbitrary world height
 
     #adds a new event to the major events of the planet
     def add_event(self, event_data):
@@ -123,6 +151,14 @@ class World:
         self.entities.append(new_entity)
         print(f"[DEBUG] Entity Added to Memory: {name} ({type_tag})")
 
+    #adding a new physical location to the world
+    def add_location(self, name, type_tag, description, x, y, radius, affiliation="Independent", keywords=[]):
+        if any(l.name.lower() == name.lower() for l in self.locations):
+            return
+        new_loc = Location(name, type_tag, description, x, y, radius, affiliation, keywords)
+        self.locations.append(new_loc)
+        print(f"[DEBUG] Location Added: {name} at {x},{y}")
+
     #adding characters to the world entitites
     def add_character(self, name, description, role, affiliation, status="Alive"):
         if any(c.name.lower() == name.lower() for c in self.characters):
@@ -138,9 +174,12 @@ class World:
             'setting': self.setting,
             'realism': self.realism,
             'description': self.description,
+            'width': self.width,
+            'height': self.height,
             'major_events': self.major_events,
             'entities': [e.to_dict() for e in self.entities],
-            'characters': [c.to_dict() for c in self.characters]
+            'characters': [c.to_dict() for c in self.characters],
+            'locations': [l.to_dict() for l in self.locations]
         }
 
 #stores information about players
@@ -203,9 +242,6 @@ class Character:
             'status': self.status
         }
     
-#NOTE: It would be cool store a bunch more classes of information such as "Faction", "Landmarks", "Cities" etc.
-#my concern is of course token sizing in our prompting, perhaps there is a way we can run an algorithm / function to determine relevant information to feed the prompt first?
-
 #stores information about the game room
 class GameRoom:
     def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None, custom_api_key=None, password=None):
@@ -340,6 +376,23 @@ class RelevanceEngine:
                     'text': f"[{entity.type_tag}] {entity.name}: {entity.description}",
                     'score': score
                 })
+        
+        #process Locations
+        for loc in world.locations:
+            score = 0
+            loc_words = RelevanceEngine.extract_keywords(loc.name)
+            score += len(loc_words.intersection(context_keywords)) * 2
+            
+            #check manual keywords for locations
+            if loc.keywords:
+                kw_set = {k.lower() for k in loc.keywords}
+                score += len(kw_set.intersection(context_keywords))
+
+            if score > 0:
+                 scored_items.append({
+                    'text': f"[{loc.type_tag}] {loc.name} (at {loc.x},{loc.y}): {loc.description} [Controlled by: {loc.affiliation}]",
+                    'score': score
+                 })
 
         #process major world events (factoring in a recency bias with keyword matching)
         #since events are added sequentially, the further they are in the list the more recent they happened.
@@ -393,11 +446,14 @@ def load_worlds():
             for w_id, w_data in data.items():
                 print(f"[DEBUG] Attempting to load world: {w_id}") #debug stuff
                 #defaults added for backward compatibility
+                #added width/height defaults
                 w = World(
                     w_data['name'], 
                     w_data.get('setting', 'Medieval Fantasy'), 
                     w_data.get('realism', 'High'), 
-                    w_data['description']
+                    w_data['description'],
+                    w_data.get('width', 1000),
+                    w_data.get('height', 500)
                 )
                 w.id = w_data['id'] #overwrite random id
                 
@@ -419,6 +475,20 @@ def load_worlds():
                             e_data['description'], 
                             e_data.get('keywords', [])
                         )
+                #load locations
+                if 'locations' in w_data:
+                    for l_data in w_data['locations']:
+                        w.add_location(
+                            l_data['name'],
+                            l_data['type'],
+                            l_data['description'],
+                            l_data.get('x', 0),
+                            l_data.get('y', 0),
+                            l_data.get('radius', 1),
+                            l_data.get('affiliation', 'Independent'), #default to independent
+                            l_data.get('keywords', [])
+                        )
+
                 if 'characters' in w_data:
                     for c_data in w_data['characters']:
                         c_role = c_data.get('role', 'NPC')
@@ -518,7 +588,7 @@ def generate_ai_response(game_room, is_embark=False):
     
     if game_room.world_id and game_room.world_id in worlds:
         w = worlds[game_room.world_id]
-        world_context = f"{w.name}: {w.description}"
+        world_context = f"{w.name}: {w.description}. Map Size: {w.width}x{w.height}."
         
         #implementing the RelevanceEngine
         #this condenses the world.major_events and world.entities based on what's happening NOW
@@ -580,10 +650,11 @@ def generate_ai_response(game_room, is_embark=False):
     3. Update player stats (HP, Status, Tags, Description) if changed.
     4. **WORLD BUILDING:** If the story introduces a NEW important Faction, City, Landmark, or NPC, you MUST create them in the JSON output.
        - Do not create entities for trivial things (e.g. "a wooden chair"). Only persistent lore.
-       - "new_entities" are for Factions, Cities, Landmarks, or Deities.
-       - **DISTINGUISH DEITIES:** Use type="Deity" for supreme cosmic beings. Use type="God" for lesser idols or demigods.
+       - "new_entities" are for Abstract concepts (Factions, Guilds, Deities).
+       - "new_locations" are for PHYSICAL places (Cities, Villages, Landmarks). Provide X,Y coordinates. Include 'affiliation' (who controls it) and 'keywords'.
        - "new_characters" are for named NPCs present in the scene.
-    5. Return ONLY a JSON object with this exact schema:
+    5. **UPDATING WORLD:** Use "location_updates" to change the affiliation or description of an existing location (e.g. if a faction takes over a city).
+    6. Return ONLY a JSON object with this exact schema:
     
     {{
       "story_text": "The narrative description...",
@@ -594,15 +665,20 @@ def generate_ai_response(game_room, is_embark=False):
           {{ "title": "King Assassinated", "description": "The King has been killed by the Iron Legion." }}
       ],
       "new_entities": [
-          {{ "name": "The Iron Legion", "type": "Faction", "description": "A mercenary army.", "keywords": ["war", "mercenary", "iron"] }},
-          {{ "name": "Solara", "type": "Deity", "description": "High Goddess of the sun.", "keywords": ["light", "sun", "holy"] }}
+          {{ "name": "The Iron Legion", "type": "Faction", "description": "A mercenary army.", "keywords": ["war", "mercenary", "iron"] }}
       ],
+      "new_locations": [
+          {{ "name": "Iron Keep", "type": "City", "description": "A fortress city.", "x": 200, "y": 450, "radius": 4, "affiliation": "Iron Legion", "keywords": ["fortress", "citadel"] }}
+      ],
+      "location_updates": {{
+          "Iron Keep": {{ "affiliation": "The Rebellion", "description": "Now under rebel control." }}
+      }},
       "new_characters": [
           {{ "name": "Garrick", "role": "Blacksmith", "affiliation": "Iron Legion", "description": "A gruff dwarf." }}
       ]
     }}
     
-    6. NOT EVERYTHING NEEDS TO BE CHANGED OR UPDATED EVERY TURN. If nothing worth preserving happened to a player, world, or entity, omit them from the updates.
+    7. NOT EVERYTHING NEEDS TO BE CHANGED OR UPDATED EVERY TURN. If nothing worth preserving happened to a player, world, or entity, omit them from the updates.
     """
     
     try:
@@ -687,10 +763,12 @@ def apply_ai_updates(game, ai_data, room_id):
     updates = ai_data.get('updates', {})
     world_updates  = ai_data.get('world_updates', [])
     new_entities   = ai_data.get('new_entities', [])
+    new_locations  = ai_data.get('new_locations', [])
+    location_updates = ai_data.get('location_updates', {}) # Get updates for existing locations
     new_characters = ai_data.get('new_characters', [])
     
     #debugging, sese if entites are being recognized
-    print(f"[DEBUG] Processing updates for Room {room_id}. Entities found: {len(new_entities)}")
+    print(f"[DEBUG] Processing updates for Room {room_id}. Entities: {len(new_entities)} | Locations: {len(new_locations)}")
 
     if game.world_id in worlds:
         world = worlds[game.world_id]
@@ -705,12 +783,39 @@ def apply_ai_updates(game, ai_data, room_id):
             for ent in new_entities:
                 world.add_entity(
                     ent.get('name', 'Unknown'),
-                    ent.get('type', 'Location'),
+                    ent.get('type', 'Organization'),
                     ent.get('description', ''),
                     ent.get('keywords', [])
                 )
                 print(f"[LORE] Created Entity: {ent.get('name')} | Type: {ent.get('type')}")
             
+            #add new locations with coords
+            for loc in new_locations:
+                world.add_location(
+                    loc.get('name', 'Unknown Place'),
+                    loc.get('type', 'Landmark'),
+                    loc.get('description', ''),
+                    loc.get('x', 0),
+                    loc.get('y', 0),
+                    loc.get('radius', 1),
+                    loc.get('affiliation', 'Independent'),
+                    loc.get('keywords', [])
+                )
+                print(f"[LORE] Created Location: {loc.get('name')} at {loc.get('x')},{loc.get('y')}")
+
+            #process location updates (changing affiliation, description)
+            for loc_name, changes in location_updates.items():
+                #find location by name
+                target_loc = next((l for l in world.locations if l.name.lower() == loc_name.lower()), None)
+                if target_loc:
+                    if 'affiliation' in changes:
+                        target_loc.affiliation = changes['affiliation']
+                    if 'description' in changes:
+                        target_loc.description = changes['description']
+                    if 'radius' in changes:
+                        target_loc.radius = changes['radius']
+                    print(f"[LORE] Updated Location: {target_loc.name}")
+
             #add new characters
             for char in new_characters:
                 world.add_character(
@@ -843,6 +948,10 @@ def handle_create_room(data):
     new_world_name = data.get('new_world_name')
     custom_api_key = data.get('custom_api_key')
     password = data.get('password') # retrieve optional password
+    
+    #width and height from the frontend payload (defaulting if missing)
+    req_width = data.get('width', 1000)
+    req_height = data.get('height', 500)
 
     if room_id in games:
         emit('status', {'msg': 'ERROR: Room ID already exists.'})
@@ -865,7 +974,10 @@ def handle_create_room(data):
         w = World(
             new_world_name if new_world_name else f"World {room_id}",
             req_setting,
-            req_realism
+            req_realism,
+            "A newly discovered realm.", #default description
+            req_width,
+            req_height
         )
         worlds[w.id] = w
         final_world_id = w.id
@@ -879,7 +991,7 @@ def handle_create_room(data):
     else:
         #fallback
         if not worlds:
-            w = World("Gaia", "Medieval Fantasy", "High", "The default world.")
+            w = World("Gaia", "Medieval Fantasy", "High", "The default world.", 1000, 500)
             worlds[w.id] = w
             save_worlds() 
         final_world_id = list(worlds.keys())[0]
@@ -1071,7 +1183,7 @@ def on_disconnect():
                     'has_acted': p.has_acted, 
                     'is_ready': p.is_ready, 
                     'tags': p.tags,
-                    'ambition': p.ambition,
+                    'ambition': p.ambition, 
                     'secret': p.secret,
                     'description': p.description
                 } 
