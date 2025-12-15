@@ -54,8 +54,11 @@ body {
 /* Splash Area  */
 .login-splash {
     flex-grow: 1;
-    background: #000;
-    background: linear-gradient(135deg, #050505 0%, #0a0a0a 100%);
+    background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.85)), url('/splash1.png');
+    background-size: cover;      
+    background-position: center; 
+    background-repeat: no-repeat;
+    
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1195,4 +1198,23 @@ button {
 
 .custom-checkbox:checked::before {
     transform: scale(1);
+}
+
+/* Placeholder Text Bottom Right */
+.login-placeholder {
+    position: absolute;
+    bottom: 30px;
+    right: 40px;
+    color: #333;
+    font-style: italic;
+    font-size: 0.8rem;
+    cursor: pointer;
+    z-index: 30;
+    transition: all 0.3s ease;
+    user-select: none;
+}
+
+.login-placeholder:hover {
+    color: var(--accent-gold); 
+    text-shadow: 0 0 8px rgba(255, 193, 7, 0.4);
 }

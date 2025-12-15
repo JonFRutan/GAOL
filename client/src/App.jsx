@@ -693,18 +693,25 @@ function App() {
             </div>
         </div>
         
-        {/* Right Splash Area Placeholder */}
+        {/* right Splash Area Placeholder */}
         <div className="login-splash">
-           {/* Future Splash Content */}
+           {/* future Splash Content */}
         </div>
 
-        {/* Login page Footer */}
+        {/* login page Footer */}
         <div className="login-footer">
              <button className="footer-btn" onClick={() => setShowAbout(true)}>ABOUT</button>
              <button className="footer-btn" onClick={() => setStatusMsg("Data features coming soon...")}>DATA</button>
         </div>
+        {/* placeholder Text - Opens new tab on click */}
+        <div 
+            className="login-placeholder" 
+            onClick={() => window.open('https://cehodum.wixsite.com/chelsea-portfolio', '_blank')}
+        >
+            Art by Chelsea Hodum
+        </div>
 
-        {/* About Modal */}
+        {/* about Modal */}
         {showAbout && (
              <div className="about-modal-overlay">
                  <div className="about-modal-box">
