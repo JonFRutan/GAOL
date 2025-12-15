@@ -1,5 +1,5 @@
 #jfr
-print("------------------------------ GAOL v1.2 ------------------------------")
+print("------------------------------ GAOL v1.3 ------------------------------")
 import os, json, random, string, time, re
 import traceback
 import google.generativeai as genai
@@ -219,7 +219,8 @@ class Player:
             'description': self.description,
             'tags' : self.tags,
             'ambition': self.ambition,
-            'secret' : self.secret 
+            'secret' : self.secret,
+            'is_ready': self.is_ready # persist ready state
             #NOTE: we don't save SID or current_action/roll since they are session specific
             }
 
@@ -384,7 +385,7 @@ class RelevanceEngine:
             loc_words = RelevanceEngine.extract_keywords(loc.name)
             score += len(loc_words.intersection(context_keywords)) * 2
             
-            #check manual keywords for locations
+            #check manual keywords
             if loc.keywords:
                 kw_set = {k.lower() for k in loc.keywords}
                 score += len(kw_set.intersection(context_keywords))
@@ -503,6 +504,62 @@ def load_worlds():
     except Exception as e:
         print(f"[CRITICAL ERROR] Error loading worlds: {e}") #debug stuff
         traceback.print_exc() #debug stuff
+
+# Load Room and Player Data on Startup
+def load_game_state():
+    global games
+    # 1. Load Rooms
+    if os.path.exists(ROOMS_FILE):
+        try:
+            with open(ROOMS_FILE, 'r') as f:
+                data = json.load(f)
+                for r_id, r_data in data.items():
+                    # Reconstruct GameRoom
+                    gr = GameRoom(
+                        room_id=r_data['room_id'],
+                        setting=r_data.get('setting', 'Medieval Fantasy'),
+                        realism=r_data.get('realism', 'High'),
+                        world_id=r_data.get('world_id'),
+                        password=None # We don't save passwords in plain text ideally, but logic dictates recreation
+                    )
+                    gr.is_started = r_data.get('is_started', False)
+                    gr.history = r_data.get('history', [])
+                    # We flag it as private if json says so, but we might lose the password on restart if not saved.
+                    # For now, we assume public re-entry or data loss of password unless we saved it. 
+                    # Implementation of full persistence would require saving passwords.
+                    
+                    games[r_id] = gr
+            print(f"[SYSTEM] Loaded {len(games)} active rooms from storage.")
+        except Exception as e:
+             print(f"[ERROR] Failed to load rooms: {e}")
+
+    # 2. Load Players and assign to Rooms
+    if os.path.exists(PLAYERS_FILE):
+        try:
+            with open(PLAYERS_FILE, 'r') as f:
+                p_data = json.load(f)
+                count = 0
+                for unique_key, p_info in p_data.items():
+                    r_id = p_info.get('room_ref')
+                    if r_id and r_id in games:
+                        # Create dummy SID until they reconnect
+                        dummy_sid = f"offline_{p_info['username']}"
+                        p = Player(dummy_sid, p_info['username'])
+                        p.hp = p_info.get('hp', 100)
+                        p.status = p_info.get('status', 'Healthy')
+                        p.description = p_info.get('description', '')
+                        p.tags = p_info.get('tags', [])
+                        p.ambition = p_info.get('ambition', 'Unknown')
+                        p.secret = p_info.get('secret', '')
+                        p.is_ready = p_info.get('is_ready', False) # RESTORE READY STATE
+                        p.connect = False # Mark offline initially
+                        
+                        games[r_id].players[dummy_sid] = p
+                        count += 1
+            print(f"[SYSTEM] Loaded {count} players into rooms.")
+        except Exception as e:
+            print(f"[ERROR] Failed to load players: {e}")
+
 
 ##############################
 #       Saver Functions      #
@@ -649,11 +706,11 @@ def generate_ai_response(game_room, is_embark=False):
     1. Narrate the outcome of their actions dramatically (max 4 sentences).
     2. PAY ATTENTION TO DICE ROLLS: 1 is a Critical Failure, 20 is a Critical Success, 10 is average. DO NOT REFERENCE THE ROLLED DIE OR IT'S OUTCOME IN STORY TEXT.
     3. Update player stats (HP, Status, Tags, Description) if changed.
-    4. **WORLD BUILDING:** If the story introduces a NEW important Faction, City, Landmark, or NPC, you MUST create them in the JSON output.
+    4. **WORLD BUILDING:** If the story introduces a NEW important Faction, City, Landmark, or Named Individual, you MUST create them in the JSON output.
        - Do not create entities for trivial things (e.g. "a wooden chair"). Only persistent lore.
-       - "new_entities" are for Abstract concepts (Factions, Guilds, Deities).
+       - "new_entities" are for Groups, Factions, Guilds, or Abstract Deities.
        - "new_locations" are for PHYSICAL places (Cities, Villages, Landmarks). Provide X,Y coordinates. Include 'affiliation' (who controls it) and 'keywords'.
-       - "new_characters" are for named NPCs present in the scene.
+       - "new_characters" are for Named Individuals. This includes Shopkeepers, Villains, Kings, CEOs, Godfathers, or powerful figures.
     5. **UPDATING WORLD:** Use "location_updates" to change the affiliation or description of an existing location (e.g. if a faction takes over a city).
     6. Return ONLY a JSON object with this exact schema:
     
@@ -675,28 +732,30 @@ def generate_ai_response(game_room, is_embark=False):
           "Iron Keep": {{ "affiliation": "The Rebellion", "description": "Now under rebel control." }}
       }},
       "new_characters": [
-          {{ "name": "Garrick", "role": "Blacksmith", "affiliation": "Iron Legion", "description": "A gruff dwarf." }}
+          {{ "name": "Garrick", "role": "Blacksmith", "affiliation": "Iron Legion", "description": "A gruff dwarf." }},
+          {{ "name": "Don Corleone", "role": "Godfather", "affiliation": "The Mafia", "description": "Head of the family." }}
       ]
     }}
     
     7. NOT EVERYTHING NEEDS TO BE CHANGED OR UPDATED EVERY TURN. If nothing worth preserving happened to a player, world, or entity, omit them from the updates.
     """
     
-    try:
-        active_key = None
-        #prefer room override key
-        if game_room.custom_api_key and len(game_room.custom_api_key) > 10:
-            active_key = game_room.custom_api_key
-        #fallback to server .env key (if one exists)
-        elif DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10:
-            active_key = DEFAULT_API_KEY
+    active_key = None
+    #prefer room override key
+    if game_room.custom_api_key and len(game_room.custom_api_key) > 10:
+        active_key = game_room.custom_api_key
+    #fallback to server .env key (if one exists)
+    elif DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10:
+        active_key = DEFAULT_API_KEY
+        
+    #if neither - return an error
+    if not active_key:
+            return {"story_text": "CRITICAL ERROR: No Gemini API Key provided. Enter one in Room Creation or check server .env config.", "updates": {}, "world_updates": []}
             
-        #if neither - return an error
-        if not active_key:
-             return {"story_text": "CRITICAL ERROR: No Gemini API Key provided. Enter one in Room Creation or check server .env config.", "updates": {}, "world_updates": []}
-             
-        genai.configure(api_key=active_key) #update the api_key
+    genai.configure(api_key=active_key) #update the api_key
 
+    # Single attempt logic - No retry loop
+    try:
         response = model.generate_content(prompt, generation_config=generation_config) #generate response
         
         #----------------------------#
@@ -704,7 +763,6 @@ def generate_ai_response(game_room, is_embark=False):
         #----------------------------#
         
         #save the last raw response to disk as `./data/last_gen.json`
-        #used for examining issues or just to see what the AI is generating
         try:
             debug_dump = {
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -754,10 +812,18 @@ def generate_ai_response(game_room, is_embark=False):
         #----------------------------#
 
         return clean_json_response(response.text) #parse JSON string to Python Dict
+    
     except Exception as e:
-        print(f"AI Error: {e}")
-        #return error directly to user instead of silent fallback
-        return {"story_text": "Gaol has gone silent...", "updates": {}, "world_updates": []}
+        # log the actual error to the backend console for debugging
+        print(f"[AI CRITICAL ERROR] Generation failed: {e}")
+        traceback.print_exc()
+        
+        # return a safe, thematic message to the frontend without raw error codes
+        return {
+            "story_text": "GAOL has gone silent", 
+            "updates": {}, 
+            "world_updates": []
+        }
 
 #helper function to process AI updates
 def apply_ai_updates(game, ai_data, room_id):
@@ -1115,7 +1181,7 @@ def handle_get_rooms():
             'player_count': len(g.players),
             'is_started': g.is_started,
             'has_custom_key': bool(g.custom_api_key), #sends if the room has a custom API key
-            'is_private': bool(g.password) # indicates if room is password protected
+            'is_private': bool(g.password) #indicates if room is password protected
         })
     emit('room_list', room_data)
 
@@ -1221,10 +1287,11 @@ def handle_rejoin(data):
         target_player = next((p for p in game.players.values() if p.username == username), None)
         
         if target_player:
+            print(f"[DEBUG REJOIN] Found player {username}. Data: {target_player.description} | {target_player.tags}")
             old_sid = target_player.sid
             
             #were they the room admin?
-            was_admin = (game.admin_sid == old_sid)
+            was_admin = (game.admin_sid == old_sid) or (game.admin_sid == f"offline_{username}")
             
             #replace old sid with new one
             if old_sid in game.players:
@@ -1232,6 +1299,12 @@ def handle_rejoin(data):
             
             target_player.sid = new_sid
             target_player.connected = True
+            
+            # if player has data but is marked 'not ready' (due to refresh or legacy file), force ready.
+            if target_player.description and len(target_player.tags) > 0 and not target_player.is_ready:
+                print(f"[SYSTEM] Auto-locking player {username} due to existing data.")
+                target_player.is_ready = True
+
             game.players[new_sid] = target_player
             
             join_room(room_id)
@@ -1265,6 +1338,8 @@ def handle_rejoin(data):
             ]
             emit('game_state_update', game_state_export, room=room_id)
             return
+        else:
+             print(f"[DEBUG REJOIN] Player {username} not found in memory for room {room_id}")
 
     #if rejoin fails, force them back to login
     emit('room_closed', {'msg': 'Session expired or invalid.'}, room=new_sid)
@@ -1286,6 +1361,10 @@ def handle_player_ready(data):
     player = game.players.get(sid)
     
     if player:
+        # Prevent Overwrite if already ready
+        if player.is_ready:
+             return
+
         player.description = description
         player.tags = tags
         player.ambition = ambition
@@ -1580,7 +1659,9 @@ def handle_action(data):
         process_turn(room)
 
 if __name__ == "__main__":
-    load_worlds() # load json on startup
+    load_worlds() # load worlds on startup
+    load_game_state() # load rooms and players on startup
+    
     #this forces any schema updates (like adding missing 'entities' keys) to disk immediately.
     save_worlds() 
 

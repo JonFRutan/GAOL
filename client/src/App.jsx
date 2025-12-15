@@ -255,17 +255,21 @@ function App() {
 
   //helper to find the current user's stats object
   const myStats = partyStats.find(p => p.name === username) || { 
-    name: username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: ''
+    name: username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: '', is_ready: false
   };
 
   //syncs local form state with incoming server data for the user
   useEffect(() => {
-      if(isReady) {
+      // If server has data, populate local state to prevent overwrite
+      if(myStats.is_ready || (myStats.description && myStats.description.length > 0)) {
+          if(myStats.is_ready) setIsReady(true);
+          
           if(myStats.description) setUserDescription(myStats.description);
           if(myStats.tags) setTagsInput(myStats.tags.join(', '));
           if(myStats.ambition) setAmbitionInput(myStats.ambition);
+          if(myStats.secret) setSecretInput(myStats.secret);
       }
-  }, [myStats.description, myStats.tags, myStats.ambition, isReady]);
+  }, [myStats.is_ready, myStats.description, myStats.tags, myStats.ambition, myStats.secret, username]);
 
   //defaults the selected player view to the user on login
   useEffect(() => {
@@ -276,6 +280,11 @@ function App() {
   const displayedPlayer = partyStats.find(p => p.name === selectedPlayer) || myStats;
   //boolean to check if user is viewing their own sheet
   const isOwnSheet = displayedPlayer.name === username;
+
+  //we are locked if local state says so, OR if the server says so.
+  const nonSystemMessages = messages.filter(m => m.sender !== 'System');
+  const isGameActive = nonSystemMessages.length > 0;
+  const isLockedIn = isReady || myStats.is_ready || isGameActive;
 
   //handles standard room joining logic
   const handleJoin = () => {
@@ -408,6 +417,9 @@ function App() {
 
   //submits character sheet data to the server
   const handleReady = () => {
+      //prevent overwrite if already ready (checking LockedIn, which covers both server and client state)
+      if(isLockedIn) return;
+
       const tags = tagsInput.split(',').filter(t => t.trim().length > 0);
       if(tags.length === 0) { setStatusMsg("Define your character tags."); return; }
       if(tags.length > 5) { setStatusMsg("Too many tags (Max 5)."); return; }
@@ -496,17 +508,52 @@ function App() {
   const allPlayersReady = partyStats.length > 0 && partyStats.every(p => p.is_ready);
   
   //filters for world sheet tabs
-  const getDeities = () => {
-      if(!worldData || !worldData.entities) return [];
-      return worldData.entities.filter(e => 
-          e.type.toLowerCase().includes('god') || e.type.toLowerCase().includes('deity')
-      );
+  const getFigures = () => {
+      if(!worldData) return [];
+      
+      const figures = [];
+      
+      // get explicit NPCs/Characters from the 'characters' list
+      if(worldData.characters && worldData.characters.length > 0) {
+          worldData.characters.forEach(c => {
+              figures.push({
+                  name: c.name,
+                  title: c.role || "Character",
+                  desc: c.description,
+                  aff: c.affiliation
+              });
+          });
+      }
+      
+      // get entity-based deities / gods etc.
+      if(worldData.entities) {
+          const godTypes = ['god', 'deity', 'titan', 'entity', 'lord', 'king', 'queen', 'emperor', 'leader', 'ceo', 'director', 'don'];
+          worldData.entities.forEach(e => {
+              const lowerType = e.type.toLowerCase();
+              if(godTypes.some(t => lowerType.includes(t))) {
+                  // avoid duplicates if it's already in characters
+                  if(!figures.some(f => f.name === e.name)) {
+                       figures.push({
+                          name: e.name,
+                          title: e.type,
+                          desc: e.description,
+                          aff: "Divine / Sovereign"
+                      });
+                  }
+              }
+          });
+      }
+      
+      return figures;
   };
   
   const getFactions = () => {
       if(!worldData || !worldData.entities) return [];
+      //filter out things that are individual titles
+      const individualTypes = ['god', 'deity', 'npc', 'character', 'person'];
       return worldData.entities.filter(e => 
-          e.type.toLowerCase().includes('faction') || e.type.toLowerCase().includes('guild')
+          (e.type.toLowerCase().includes('faction') || e.type.toLowerCase().includes('guild') || e.type.toLowerCase().includes('group'))
+          && !individualTypes.some(t => e.type.toLowerCase().includes(t))
       );
   };
 
@@ -517,11 +564,7 @@ function App() {
       return worldData.locations || [];
   };
 
-  //Determine if character sheet prompt should be active (gold particle glow)
-  //Active if: Game has not started (messages.length === 0) AND User is not ready AND Viewing Character tab AND Viewing own sheet
-  //FIX: Ignore "System" messages (like model changes) so they don't break the pre-game UI
-  const nonSystemMessages = messages.filter(m => m.sender !== 'System');
-  const showSheetPrompt = !isReady && nonSystemMessages.length === 0 && activeTab === 'character' && isOwnSheet;
+  const showSheetPrompt = !isLockedIn && nonSystemMessages.length === 0 && activeTab === 'character' && isOwnSheet;
 
   //render logic for the initial login/lobby screen
   if (gameState === 'login') {
@@ -904,7 +947,7 @@ function App() {
             {nonSystemMessages.length === 0 && !isAdmin && (
                 <div className="embark-overlay">
                     <div style={{color:'#666', fontStyle:'italic'}}>
-                        {isReady ? "Waiting for host to start..." : "Fill out character sheet..."}
+                        {isLockedIn ? "Waiting for host to start..." : "Fill out character sheet..."}
                     </div>
                 </div>
             )}
@@ -1022,7 +1065,7 @@ function App() {
                                 placeholder="Briefly describe your character..." 
                                 value={isOwnSheet ? userDescription : (displayedPlayer.description || '')}
                                 onChange={e => isOwnSheet && setUserDescription(e.target.value)}
-                                disabled={!isOwnSheet || (isOwnSheet && isReady)} 
+                                disabled={!isOwnSheet || (isOwnSheet && isLockedIn)} 
                             />
                         </div>
                         <div className="sheet-right">
@@ -1036,7 +1079,7 @@ function App() {
                                     placeholder="e.g. Human, Warrior, Strong" 
                                     value={isOwnSheet ? tagsInput : (displayedPlayer.tags ? displayedPlayer.tags.join(', ') : '')}
                                     onChange={e => isOwnSheet && setTagsInput(e.target.value)}
-                                    disabled={!isOwnSheet || (isOwnSheet && isReady)} 
+                                    disabled={!isOwnSheet || (isOwnSheet && isLockedIn)} 
                                 />
                             </div>
                             <div style={{marginBottom: '10px'}}>
@@ -1046,7 +1089,7 @@ function App() {
                                     placeholder="e.g. Become King" 
                                     value={isOwnSheet ? ambitionInput : (displayedPlayer.ambition || '')}
                                     onChange={e => isOwnSheet && setAmbitionInput(e.target.value)}
-                                    disabled={!isOwnSheet || (isOwnSheet && isReady)} 
+                                    disabled={!isOwnSheet || (isOwnSheet && isLockedIn)} 
                                 />
                             </div>
                             <div style={{flexGrow: 1, display:'flex', flexDirection:'column', marginBottom:'10px'}}>
@@ -1058,7 +1101,7 @@ function App() {
                                         placeholder="Hidden info..." 
                                         value={secretInput}
                                         onChange={e => setSecretInput(e.target.value)}
-                                        disabled={isReady} 
+                                        disabled={isLockedIn} 
                                     />
                                 ) : (
                                     <div className="secret-mask">
@@ -1068,7 +1111,7 @@ function App() {
                             </div>
                             {/* confirm button logic */}
                             {isOwnSheet && (
-                                !isReady ? (
+                                !isLockedIn ? (
                                     <button className="ready-btn" onClick={handleReady} style={{width:'100%', padding:'10px'}}>
                                         CONFIRM & READY
                                     </button>
@@ -1106,7 +1149,7 @@ function App() {
                         <div className="sub-tab-bar">
                             <button className={`sub-tab-btn ${worldTab === 'history' ? 'active' : ''}`} onClick={()=>setWorldTab('history')}>HISTORY</button>
                             <button className={`sub-tab-btn ${worldTab === 'locations' ? 'active' : ''}`} onClick={()=>setWorldTab('locations')}>LOCATIONS</button>
-                            <button className={`sub-tab-btn ${worldTab === 'gods' ? 'active' : ''}`} onClick={()=>setWorldTab('gods')}>DEITIES</button>
+                            <button className={`sub-tab-btn ${worldTab === 'figures' ? 'active' : ''}`} onClick={()=>setWorldTab('figures')}>FIGURES</button>
                             <button className={`sub-tab-btn ${worldTab === 'factions' ? 'active' : ''}`} onClick={()=>setWorldTab('factions')}>FACTIONS</button>
                         </div>
 
@@ -1139,16 +1182,17 @@ function App() {
                                 ) : <div style={{color:'#555'}}>No known locations.</div>
                             )}
 
-                            {worldTab === 'gods' && (
-                                getDeities().length > 0 ? (
-                                    getDeities().map((e, i) => (
+                            {worldTab === 'figures' && (
+                                getFigures().length > 0 ? (
+                                    getFigures().map((e, i) => (
                                         <div key={i} className="entity-item">
                                             <div className="entity-name">{e.name}</div>
-                                            <div className="entity-type">{e.type}</div>
-                                            <div className="entity-desc">{e.description}</div>
+                                            <div className="entity-type">{e.title}</div>
+                                            <div className="entity-desc">{e.desc}</div>
+                                            {e.aff && <div style={{fontSize: '0.75rem', color: '#666', marginTop:'5px'}}>Affiliation: {e.aff}</div>}
                                         </div>
                                     ))
-                                ) : <div style={{color:'#555'}}>No deities known.</div>
+                                ) : <div style={{color:'#555'}}>No major figures known.</div>
                             )}
 
                             {worldTab === 'factions' && (
