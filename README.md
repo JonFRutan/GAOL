@@ -2,7 +2,7 @@
 
 # G A O L
 
-**An otherworldly storyweaver bringing drama and adventure to the worlds of his creation.**
+**An otherworldly storyweaver bringing drama and adventure to the realms of his creation.**
 
 ![Python](https://img.shields.io/badge/Backend-Flask-blue?style=for-the-badge&logo=python)
 ![React](https://img.shields.io/badge/Frontend-Vite%20%2B%20React-violet?style=for-the-badge&logo=react)
@@ -21,33 +21,36 @@ GAOL is a multiplayer AI storyteller based on the *AI Dungeon* Multiplayer and *
 ##  Key Features
 
 ### Persistent Worlds
-You start by creating new worlds, defining a general setting and a "realism" factor.
-* **Scope & Scale:** GAOL remembers major events.
-* **Dynamic Environments:** Worlds can be ruined, restored, and influenced drastically by your party's decisions.
+Worlds are persistent, living, and richly defined.
+* **History:** Wars, disasters, epidemics, all major historical events are chronicled by GAOl. Your journey will be influenced by those who came before you, and may influence future adventurers.
+* **Figures:** World figures such as gods, kings, and mythical beings will have influence on the world. Their presence will influence the world and how it behaves. 
+* **Factions:** Factions and the influence will affect the way you may conduct yourselves. Be subjugated as slaves of an empire, or tracked down by vampire hunters, the world will treat you as it sees fit.
+* **Landmarks:** Explore, visit and discover locations across the world. Cities, monuments, graves, and anything else GAOL deems worth marking. 
+* **Scope:** Worlds are defined with sizes, so that locations can be marked with coordinates and to give them a vast sense of scale for your journey.
 
 ### Deep Characterization
-Begin by defining your character with a summary, tags, ambitions, and **secrets**.
+Begin each journey by defining your character with a summary, tags, ambition, and secrets.
 * **Active Tracking:** Every bit of information is weighed during story generation.
 * **Evolution:** Summaries, tags, and statuses update automatically as you adventure.
 
 ### Multiplayer Party
 Supports **up to 6 players** with support for hot-dropping and hot-joining.
 * **Collective Storytelling:** The irreverent GAOL remains impartial, weighing every player's choice.
-* **Co-op (mostly):** Players *may* work together, although ambitions and secrets may cause friction...
+* **Co-op:** Players *may* work together, although conflicting ambitions and clandestine secrets may cause friction...
 
 
 ### The Dice Will Decide
 Your actions will be weighed by the roll of a D20. Keep in mind the dice don't decide everything, and GAOL may have plans of his own with your choices...
 
 ## How does it work?
-GAOL uses the Gemini API, specifically the `Gemini-2.5-flash` model. GAOL's server is set up with very detailed and explicit instructions to provide the API which return not just text, but a JSON object that is parsed to provide both the generated story text, and a list of updates to be done across characters and the world. These updates are reflected on the data sheets, character sheets are frequently updated and major events can even change the world sheet.
+GAOL uses the Gemini API, specifically the `Gemini-2.5-flash-lite` model. GAOL's server is set up with very detailed and explicit instructions to provide the API which return not just text, but a JSON object that is parsed to provide both the generated story text, and a list of updates to be done across characters and the world. These updates are reflected on the data sheets, character sheets are frequently updated and major events can even change the world sheet.
 
 ### Tech Stack
 
 | Component | Technology | Description |
 | :--- | :--- | :--- |
 | **Backend** | Python / Flask | Handles API calls, state management, and game rooms (`app.py`). |
-| **Frontend** | React / Vite | A responsive client environment (`./client`). |
+| **Frontend** | React / Vite | A frontend "tabletop" esque environment. (`./client`). |
 
 ---
 
