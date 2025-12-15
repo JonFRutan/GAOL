@@ -44,7 +44,7 @@ function App() {
   const [secretInput, setSecretInput] = useState('');
 
   //creation parameters
-  const [setting, setSetting] = useState('Medieval Fantasy');
+  const [setting, setSetting] = useState('');
   const [realism, setRealism] = useState('High');
   const [selectedWorld, setSelectedWorld] = useState('');
   const [newWorldName, setNewWorldName] = useState('');
@@ -97,8 +97,12 @@ function App() {
   const [promoteTarget, setPromoteTarget] = useState('');
   const [revokeKeyOnPromote, setRevokeKeyOnPromote] = useState(false);
 
+  //constants for when the kick screen is to be shown
   const [showKickModal, setShowKickModal] = useState(false);
   const [kickTarget, setKickTarget] = useState('');
+
+  //world creation menu constant
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   //checks local storage for a previously saved api key on mount
   useEffect(() => {
@@ -121,6 +125,10 @@ function App() {
             localStorage.removeItem('gaol_session');
         }
     }
+  }, []);
+
+  useEffect(() => {
+      socket.emit('get_worlds');
   }, []);
 
   //sets up all socket event listeners
@@ -211,9 +219,6 @@ function App() {
             setStatusMsg("Admin privileges revoked.");
         }
     });
-
-    //request initial data on mount
-    socket.emit('get_worlds');
     
     //request rooms immediately
     socket.emit('get_rooms');
@@ -561,48 +566,7 @@ function App() {
               {/* conditional rendering for creation inputs */}
               {loginMode === 'create' && (
                 <>
-                  <div className="form-row">
-                    <label className="login-label">World</label>
-                    <select onChange={e => setSelectedWorld(e.target.value)} value={selectedWorld}>
-                      {availableWorlds.map(w => (
-                          <option key={w.id} value={w.id}>{w.name}</option>
-                      ))}
-                      <option value="NEW">+ Create New World</option>
-                    </select>
-                  </div>
-
-                  {/* inputs specific to new world creation */}
-                  {selectedWorld === 'NEW' && (
-                     <>
-                       <div className="form-row">
-                         <label className="login-label">New World Name</label>
-                         <input placeholder="e.g. Middle Earth" onChange={e => setNewWorldName(e.target.value)} />
-                       </div>
-                       <div className="form-row">
-                        <label className="login-label">Setting</label>
-                        <input placeholder="e.g. High Fantasy" onChange={e => setSetting(e.target.value)} />
-                      </div>
-                      <div className="form-row">
-                        <label className="login-label">Realism</label>
-                        <select onChange={e => setRealism(e.target.value)} value={realism}>
-                          <option value="High">High</option>
-                          <option value="Mid">Mid</option>
-                          <option value="Low">Low</option>
-                        </select>
-                      </div>
-                      {/* map Scale Selection */}
-                      <div className="form-row">
-                        <label className="login-label">Map Size</label>
-                        <select onChange={e => setWorldSize(e.target.value)} value={worldSize}>
-                          <option value="Small">Small (512 x 256)</option>
-                          <option value="Medium">Medium (1024 x 512)</option>
-                          <option value="Large">Large (2048 x 1024)</option>
-                        </select>
-                      </div>
-                     </>
-                  )}
-                  
-                  {/* Optional Password Field */}
+                  {/* optional password field */}
                   <div className="form-row">
                       <label className="login-label">Password (Optional)</label>
                       <input 
@@ -613,7 +577,7 @@ function App() {
                       />
                   </div>
 
-                  {/* Custom API Key Input */}
+                  {/* custom API key input */}
                   <div className="form-row">
                     <label className="login-label" style={{color: 'var(--terminal-green)'}}>
                       Gemini API Key
@@ -628,6 +592,72 @@ function App() {
                         }}
                     />
                   </div>
+                  
+                  {/* spacer to push world selection to bottom */}
+                  <div style={{height: '20px'}}></div>
+
+                  {/* World Selection */}
+                  <div className="form-row">
+                    <label className="login-label">World</label>
+                    <select onChange={e => setSelectedWorld(e.target.value)} value={selectedWorld}>
+                      {availableWorlds.map(w => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                      {/* updates label to show the user's custom name if entered */}
+                      <option value="NEW">
+                          {newWorldName ? `[NEW] ${newWorldName}` : "+ Create New World"}
+                      </option>
+                    </select>
+                  </div>
+                  
+                  {/* Dynamic World Info Card */}
+                  <div className="world-info-card">
+                      {selectedWorld === 'NEW' ? (
+                          <>
+                              <div className="world-card-title">
+                                  {newWorldName || "NEW WORLD"}
+                              </div>
+                              <div className="world-card-meta">
+                                  <span>{realism} Realism</span>
+                                  <span>{worldSize} Map</span>
+                              </div>
+                              <div className="world-card-desc">
+                                  {setting || "No setting description provided..."}
+                              </div>
+                          </>
+                      ) : (
+                        /* Logic to display existing world details */
+                        (() => {
+                           const w = availableWorlds.find(w => w.id === selectedWorld);
+                           if(!w) return null;
+                           return (
+                              <>
+                                <div className="world-card-title">{w.name}</div>
+                                <div className="world-card-meta">
+                                    <span>{w.realism} Realism</span>
+                                    {/* Calculated size display based on width */}
+                                    <span>
+                                        {w.width === 512 ? 'Small' : w.width === 2048 ? 'Large' : 'Medium'} Map
+                                    </span>
+                                </div>
+                                <div className="world-card-desc">
+                                    {/* Prefer description, fallback to setting if desc is empty/default */}
+                                    {w.description && w.description !== "A newly discovered realm." ? w.description : w.setting}
+                                </div>
+                              </>
+                           );
+                        })()
+                      )}
+                  </div>
+
+                  {/* customization button*/}
+                  {selectedWorld === 'NEW' && (
+                       <div className="form-row" style={{marginBottom: '10px'}}>
+                           <button className="setup-btn" onClick={() => setShowCreateModal(true)}>
+                               CUSTOMIZE WORLD
+                           </button>
+                       </div>
+                  )}
                 </>
               )}
 
@@ -643,7 +673,7 @@ function App() {
                 {statusMsg !== 'System Ready...' ? statusMsg : ''}
               </div>
 
-              {/* Active Rooms Table */}
+              {/* active rooms table (autorefreshing) */}
               {loginMode === 'join' && activeRooms.length > 0 && (
                   <div className="room-list-container">
                       <h3>Available Rooms</h3>
@@ -693,17 +723,17 @@ function App() {
             </div>
         </div>
         
-        {/* right Splash Area Placeholder */}
+        {/* splash area */}
         <div className="login-splash">
-           {/* Splash Content */}
+           {/* splash content is here, pulled from src/assets */}
         </div>
 
-        {/* login page Footer */}
+        {/* login page footer */}
         <div className="login-footer">
              <button className="footer-btn" onClick={() => setShowAbout(true)}>ABOUT</button>
              <button className="footer-btn" onClick={() => setStatusMsg("Data features coming soon...")}>DATA</button>
         </div>
-        {/* placeholder Text - Opens new tab on click */}
+        {/* credit where credit is due */}
         <div 
             className="login-placeholder" 
             onClick={() => window.open('https://cehodum.wixsite.com/chelsea-portfolio', '_blank')}
@@ -711,7 +741,7 @@ function App() {
             Art by Chelsea Hodum
         </div>
 
-        {/* about Modal */}
+        {/* About Modal */}
         {showAbout && (
              <div className="about-modal-overlay">
                  <div className="about-modal-box">
@@ -748,6 +778,57 @@ function App() {
                         <button className="join-sm-btn" style={{flex:1}} onClick={() => setShowPwdModal(false)}>CANCEL</button>
                         <button className="action-btn" style={{flex:1, marginTop:0}} onClick={handlePasswordSubmit}>UNLOCK</button>
                     </div>
+                </div>
+            </div>
+        )}
+
+        {/* World Creation Modal */}
+        {showCreateModal && (
+            <div className="about-modal-overlay">
+                <div className="about-modal-box">
+                    <h2 style={{color:'var(--accent-gold)'}}>WORLD CREATION</h2>
+                    <p style={{color:'#666', marginBottom:'20px', fontSize:'0.8rem'}}>Create a new world.</p>
+                    
+                    <div style={{width:'100%', display:'flex', flexDirection:'column', gap:'15px'}}>
+
+                        <div className="form-row">
+                             <label className="login-label">Name</label>
+                             <input placeholder="e.g. Middle Earth" value={newWorldName} onChange={e => setNewWorldName(e.target.value)} />
+                        </div>
+                        
+                        <div className="form-row">
+                            <label className="login-label">Realism</label>
+                            <select onChange={e => setRealism(e.target.value)} value={realism}>
+                              <option value="High">High</option>
+                              <option value="Mid">Medium</option>
+                              <option value="Low">Low</option>
+                            </select>
+                        </div>
+                        
+                        <div className="form-row">
+                            <label className="login-label">Map Size</label>
+                            <select onChange={e => setWorldSize(e.target.value)} value={worldSize}>
+                              <option value="Small">Small (512 x 256)</option>
+                              <option value="Medium">Medium (1024 x 512)</option>
+                              <option value="Large">Large (2048 x 1024)</option>
+                            </select>
+                        </div>
+
+                        <div style={{borderBottom: '1px solid #333', margin: '10px 0'}}></div>
+
+                        <div className="form-row" style={{alignItems:'flex-start'}}>
+                            <label className="login-label" style={{marginTop:'10px', color:'var(--accent-gold)'}}>Setting</label>
+                            <textarea 
+                                placeholder="Describe your world here..." 
+                                value={setting} 
+                                onChange={e => setSetting(e.target.value)} 
+                            />
+                        </div>
+                    </div>
+
+                    <button className="action-btn" style={{marginTop:'25px'}} onClick={() => setShowCreateModal(false)}>
+                        CONFIRM SETTINGS
+                    </button>
                 </div>
             </div>
         )}
@@ -1203,7 +1284,6 @@ function App() {
                 </div>
             </div>
         )}
-
     </div>
   );
 }

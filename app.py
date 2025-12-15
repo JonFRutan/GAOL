@@ -930,8 +930,19 @@ def index():
 #fetches worlds for the frontend dropdown
 @socketio.on('get_worlds')
 def handle_get_worlds():
-    world_list = [{'id': k, 'name': v.name} for k, v in worlds.items()]
+    world_list = []
+    for k, v in worlds.items():
+        world_list.append({
+            'id': k,
+            'name': v.name,
+            'setting': v.setting,
+            'realism': v.realism,
+            'description': v.description,
+            'width': v.width,
+            'height': v.height
+        })
     emit('world_list', world_list)
+    
     #tell the client if the server has a default .env key
     has_key = bool(DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10)
     emit('server_config', {'has_env_key': has_key})
