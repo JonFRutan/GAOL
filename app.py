@@ -704,7 +704,7 @@ def generate_ai_response(game_room, is_embark=False):
     
     INSTRUCTIONS:
     1. Narrate the outcome of their actions dramatically (max 4 sentences).
-    2. PAY ATTENTION TO DICE ROLLS: 1 is a Critical Failure, 20 is a Critical Success, 10 is average. DO NOT REFERENCE THE ROLLED DIE OR IT'S OUTCOME IN STORY TEXT.
+    2. PAY ATTENTION TO DICE ROLLS: 1 is a Critical Failure, 20 is a Critical Success, 10 is average. DO NOT REFERENCE THE ROLLED DIE OR IT'S OUTCOME IN STORY TEXT. Trivial actions (e.g. Examining a location) should impacted less by the dice roll unless it's a critical failure or miracle.
     3. Update player stats (HP, Status, Tags, Description) if changed.
     4. **WORLD BUILDING:** If the story introduces a NEW important Faction, City, Landmark, or Named Individual, you MUST create them in the JSON output.
        - Do not create entities for trivial things (e.g. "a wooden chair"). Only persistent lore.
