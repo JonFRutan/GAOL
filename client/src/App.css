@@ -54,7 +54,7 @@ body {
 /* Splash Area  */
 .login-splash {
     flex-grow: 1;
-    background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.85)), url('/splash1.png');
+    background: linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.85)), url('./assets/splash1.png');
     background-size: cover;      
     background-position: center; 
     background-repeat: no-repeat;

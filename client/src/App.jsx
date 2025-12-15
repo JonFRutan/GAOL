@@ -695,7 +695,7 @@ function App() {
         
         {/* right Splash Area Placeholder */}
         <div className="login-splash">
-           {/* future Splash Content */}
+           {/* Splash Content */}
         </div>
 
         {/* login page Footer */}
