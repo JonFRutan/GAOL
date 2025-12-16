@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { debugLog } from './utils/logger.js'; //debugging logger
 import io from 'socket.io-client';
 import './App.css';
 
@@ -7,11 +8,16 @@ const SOCKET_URL = import.meta.env.PROD ? undefined : 'http://localhost:5000';
 const socket = io(SOCKET_URL);
 
 function App() {
+  //////////////////////////////////////
+  //              CONSTANTS           //
+  //////////////////////////////////////
+  //store client data
+  //including frontend display states
+
   //tracks if user is in 'login' screen or 'playing' the game
   const [gameState, setGameState] = useState('login'); 
   //toggles between 'join' existing room or 'create' new room forms
   const [loginMode, setLoginMode] = useState('join'); 
-
   //basic user inputs for authentication
   const [username, setUsername] = useState('');
   const [room, setRoom] = useState('');
@@ -20,44 +26,35 @@ function App() {
   const [joinPassword, setJoinPassword] = useState('');
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [pendingRoom, setPendingRoom] = useState(''); //stores room ID while waiting for password
-  
   //list of available lobbies fetched from server
   const [activeRooms, setActiveRooms] = useState([]);
-
   //world tracking
   const [currentWorldName, setCurrentWorldName] = useState('');
   //stores full world object (lore, events, settings)
   const [worldData, setWorldData] = useState(null); 
-  
   //flags for game permissions and state
   const [isAdmin, setIsAdmin] = useState(false); 
   const [isReady, setIsReady] = useState(false); 
   const [isEmbarking, setIsEmbarking] = useState(false); //track if launch animation started
-  
   //tracks which character sheet is currently being viewed
   const [selectedPlayer, setSelectedPlayer] = useState(null); 
-
   //character sheet form states
   const [userDescription, setUserDescription] = useState(''); 
   const [tagsInput, setTagsInput] = useState('');
   const [ambitionInput, setAmbitionInput] = useState('Unknown');
   const [secretInput, setSecretInput] = useState('');
-
   //creation parameters
   const [setting, setSetting] = useState('');
   const [realism, setRealism] = useState('High');
   const [selectedWorld, setSelectedWorld] = useState('');
   const [newWorldName, setNewWorldName] = useState('');
   const [availableWorlds, setAvailableWorlds] = useState([]);
-  
-  //New World Size Parameter
+  //world size parameter
   const [worldSize, setWorldSize] = useState('Medium');
-
-  //state for Custom API Key
+  //state for custom API key
   const [customApiKey, setCustomApiKey] = useState('');
   //track if server has a default key (null = loading)
   const [serverHasKey, setServerHasKey] = useState(null);
-
   //gameplay data containers
   const [messages, setMessages] = useState([]);
   const [partyStats, setPartyStats] = useState([]);
@@ -65,53 +62,51 @@ function App() {
   const [statusMsg, setStatusMsg] = useState('System Ready...');
   //visual state for the d20 roll
   const [lastRoll, setLastRoll] = useState(null);
-  
   //admin override state
   const [overrideText, setOverrideText] = useState('');
   const [showOverrideModal, setShowOverrideModal] = useState(false); // Updated to Modal Toggle
-  
   //toggles right panel view between character sheet and world info
   const [activeTab, setActiveTab] = useState('character'); 
   //toggles sub-tabs within the world sheet
   const [worldTab, setWorldTab] = useState('history');
-
   //state for about modal
   const [showAbout, setShowAbout] = useState(false);
-
   //particles for embark explosion
   const [particles, setParticles] = useState([]);
-
   //ref used for auto-scrolling chat
   const chatEndRef = useRef(null);
-
   //state for model selector modal
   const [showModelModal, setShowModelModal] = useState(false);
   const [currentModel, setCurrentModel] = useState('gemini-2.5-flash-lite');
-
   //state for key update modal (feature request 1)
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [newKeyInput, setNewKeyInput] = useState('');
-
   //state for promotion modal (feature request 2)
   const [showPromoteModal, setShowPromoteModal] = useState(false);
   const [promoteTarget, setPromoteTarget] = useState('');
   const [revokeKeyOnPromote, setRevokeKeyOnPromote] = useState(false);
-
   //constants for when the kick screen is to be shown
   const [showKickModal, setShowKickModal] = useState(false);
   const [kickTarget, setKickTarget] = useState('');
-
   //world creation menu constant
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  //////////////////////////////////////
+  //             useEffects           //
+  //////////////////////////////////////
+  //useEffects are automatically run at start
+  //some of them only run once, some run when specific consts update, some run every time anything updates.
+
   //checks local storage for a previously saved api key on mount
+  //runs once at start, then never again.
   useEffect(() => {
     const savedKey = localStorage.getItem('gaol_api_key');
     if (savedKey) {
         setCustomApiKey(savedKey);
     }
     
-    //attempt to rejoin if a session exists in local storage
+    //attempt to rejoin if a session exists in local storage\\
+    //runs once at start, then never again
     const savedSession = localStorage.getItem('gaol_session');
     if (savedSession) {
         try {
@@ -125,38 +120,63 @@ function App() {
             localStorage.removeItem('gaol_session');
         }
     }
-  }, []);
+  }, []); // the empty array at the end here tells use it only runs once at the very start.
 
+  //ask for all the world information from the backend.
+  //runs once at start, then never again.
   useEffect(() => {
       socket.emit('get_worlds');
   }, []);
 
-  //sets up all socket event listeners
+  //sets up all socket event listeners.
+  //runs every time gameState or username are updated.
   useEffect(() => {
-    //listens for incoming chat messages
-    socket.on('message', (data) => setMessages((prev) => [...prev, data]));
-    //updates the top status ticker
-    socket.on('status', (data) => setStatusMsg(data.msg));
-    //updates the list of players and their stats
-    socket.on('game_state_update', (data) => setPartyStats(data));
-    
+    debugLog("Opening Sockets")
+    //LOGIN VIEW SOCKETS
+    //request rooms immediately
+    socket.emit('get_rooms');
     //populates the world dropdown in creation menu
     socket.on('world_list', (data) => {
         setAvailableWorlds(data);
         if(data.length > 0) setSelectedWorld(data[0].id);
         else setSelectedWorld('NEW');
     });
-    
     //listen for server config to know if .env key exists
     socket.on('server_config', (data) => {
         setServerHasKey(data.has_env_key);
     });
-
     //updates the table of active rooms in the lobby
     socket.on('room_list', (data) => {
         setActiveRooms(data);
     });
+    //set up polling interval for rooms list (every 3 seconds)
+    const roomPollInterval = setInterval(() => {
+        if(gameState === 'login') {
+            socket.emit('get_rooms');
+        }
+    }, 3000);
 
+    //password Requirement Trigger
+    socket.on('password_required', (data) => {
+        setPendingRoom(data.room);
+        setStatusMsg("Restricted Access: Password Required.");
+        setShowPwdModal(true);
+    });
+
+    //handle room closure by host
+    //this can be caused by emissions from
+    //app.py : on_leave and handle_rejoin
+    socket.on('room_closed', (data) => {
+        setGameState('login');
+        setRoom('');
+        setMessages([]);
+        setPartyStats([]);
+        setIsReady(false);
+        setIsAdmin(false);
+        setStatusMsg(data.msg);
+        setIsEmbarking(false);
+        localStorage.removeItem('gaol_session'); //clear session
+    });
     //handles successful room entry, switching view to game
     socket.on('join_success', (data) => {
       setRoom(data.room);
@@ -172,30 +192,17 @@ function App() {
       
       localStorage.setItem('gaol_session', JSON.stringify({ username: username, room: data.room }));
     });
-
-    //handle room closure by host
-    socket.on('room_closed', (data) => {
-        setGameState('login');
-        setRoom('');
-        setMessages([]);
-        setPartyStats([]);
-        setIsReady(false);
-        setIsAdmin(false);
-        setStatusMsg(data.msg);
-        setIsEmbarking(false);
-        localStorage.removeItem('gaol_session'); //clear session
-    });
-
+    //END LOGIN VIEW
+    
+    //INGAME VIEW SOCKETS
+    //listens for incoming chat messages
+    socket.on('message', (data) => setMessages((prev) => [...prev, data]));
+    //updates the top status ticker
+    socket.on('status', (data) => setStatusMsg(data.msg));
+    //updates the list of players and their stats
+    socket.on('game_state_update', (data) => setPartyStats(data));
     //updates world lore/events when ai triggers a change
     socket.on('world_update', (data) => setWorldData(data));
-
-    //Password Requirement Trigger
-    socket.on('password_required', (data) => {
-        setPendingRoom(data.room);
-        setStatusMsg("Restricted Access: Password Required.");
-        setShowPwdModal(true);
-    });
-
     //handle being kicked
     socket.on('kicked', (data) => {
         setGameState('login');
@@ -208,7 +215,6 @@ function App() {
         setIsEmbarking(false);
         localStorage.removeItem('gaol_session'); //clear session
     });
-
     //handle admin status update (transfer)
     socket.on('admin_update', (data) => {
         if(data.is_admin) {
@@ -219,19 +225,11 @@ function App() {
             setStatusMsg("Admin privileges revoked.");
         }
     });
-    
-    //request rooms immediately
-    socket.emit('get_rooms');
-    
-    //Set up polling interval for rooms list (every 3 seconds)
-    const roomPollInterval = setInterval(() => {
-        if(gameState === 'login') {
-            socket.emit('get_rooms');
-        }
-    }, 3000);
+    //END INGAME VIEW
 
     //cleanup listeners on unmount
     return () => { 
+      debugLog("Closing Sockets")
       socket.off('message'); 
       socket.off('status'); 
       socket.off('game_state_update'); 
@@ -246,21 +244,25 @@ function App() {
       socket.off('admin_update');
       clearInterval(roomPollInterval); //clear interval
     };
-  }, [gameState, username]); //dependency on gameState ensuring interval respects login status
+  }, [gameState]); //dependency on gameState ensuring interval respects login status
+  //NOTE: if gameState is updated, this useEffect will be rerun, hence why they are within the end array.
+  //FIXME: This is a bit silly, we don't need to close and reopen sockets on every game state change.
+  //       this should potentially be moved into a couple different movestates for sockets that need to beupdated, and those that may be static.
 
   //auto-scrolls to the bottom of chat when new messages arrive
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+  //runs every time the messages field is updated
 
   //helper to find the current user's stats object
   const myStats = partyStats.find(p => p.name === username) || { 
-    name: username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: '', is_ready: false
+    name: username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: '', is_ready: false //default stuff
   };
 
   //syncs local form state with incoming server data for the user
   useEffect(() => {
-      // If server has data, populate local state to prevent overwrite
+      // if server has data, populate local state to prevent overwrites
       if(myStats.is_ready || (myStats.description && myStats.description.length > 0)) {
           if(myStats.is_ready) setIsReady(true);
           
@@ -270,6 +272,7 @@ function App() {
           if(myStats.secret) setSecretInput(myStats.secret);
       }
   }, [myStats.is_ready, myStats.description, myStats.tags, myStats.ambition, myStats.secret, username]);
+  //updates every time any of the player stats are updated. This reflects the servers AI changes onto the frontend
 
   //defaults the selected player view to the user on login
   useEffect(() => {
@@ -278,13 +281,19 @@ function App() {
 
   //determines which player to show in the right panel
   const displayedPlayer = partyStats.find(p => p.name === selectedPlayer) || myStats;
+
   //boolean to check if user is viewing their own sheet
+  //this used to visually distinguish your sheet from another players (just flavoring for intuitiveness)
   const isOwnSheet = displayedPlayer.name === username;
 
   //we are locked if local state says so, OR if the server says so.
-  const nonSystemMessages = messages.filter(m => m.sender !== 'System');
-  const isGameActive = nonSystemMessages.length > 0;
+  const nonSystemMessages = messages.filter(m => m.sender !== 'System'); //filters out system messages from all the messages
+  const isGameActive = nonSystemMessages.length > 0; //if messages have been sent that aren't system messages (e.g. changing AI model), the game is active
   const isLockedIn = isReady || myStats.is_ready || isGameActive;
+
+  //////////////////////////////////////
+  //           LOGIN HANDLERS         //
+  //////////////////////////////////////
 
   //handles standard room joining logic
   const handleJoin = () => {
@@ -297,31 +306,15 @@ function App() {
       setSelectedPlayer(username);
     }
   };
-  
-  //cleanly handle the leave room button
-  const handleLeave = () => {
-      if(room) {
-          socket.emit('leave_room', { room });
-      }
-      // Reset local state
-      setGameState('login');
-      setRoom('');
-      setMessages([]);
-      setPartyStats([]);
-      setIsReady(false);
-      setIsAdmin(false);
-      setStatusMsg("Disconnected.");
-      localStorage.removeItem('gaol_session'); // clear session explicitly
-  };
 
-  //Submit password from modal
+  //submit password from modal
   const handlePasswordSubmit = () => {
       if(pendingRoom && username) {
           socket.emit('join', { username, room: pendingRoom, password: joinPassword });
-          // Note: we don't close modal here immediately, we wait for join_success or another error
+          // NOTE: we don't close modal here immediately, we wait for join_success or another error
       }
   };
-
+  
   //handles joining via the lobby list buttons
   const handleQuickJoin = (targetRoomId) => {
       if(!username.trim()) {
@@ -386,6 +379,10 @@ function App() {
     setSelectedPlayer(username);
   };
 
+  //////////////////////////////////////
+  //          INGAME HANDLERS         //
+  //////////////////////////////////////
+
   //trigger for admin to start the game loop
   const handleEmbark = (e) => {
     setIsEmbarking(true); // Hide the button immediately
@@ -415,7 +412,24 @@ function App() {
     socket.emit('embark', { room });
   };
 
+  //cleanly handle the leave room button
+  const handleLeave = () => {
+      if(room) {
+          socket.emit('leave_room', { room });
+      }
+      // Reset local state
+      setGameState('login');
+      setRoom('');
+      setMessages([]);
+      setPartyStats([]);
+      setIsReady(false);
+      setIsAdmin(false);
+      setStatusMsg("Disconnected.");
+      localStorage.removeItem('gaol_session'); // clear session explicitly
+  };
+
   //submits character sheet data to the server
+  //emission triggered by app.py : handle_player_ready
   const handleReady = () => {
       //prevent overwrite if already ready (checking LockedIn, which covers both server and client state)
       if(isLockedIn) return;
@@ -435,17 +449,19 @@ function App() {
       });
   };
 
+  //User Submits Action (hits enter from input box)
   //sends player chat/action to server and rolls a client-side die
   const sendAction = () => {
     if (inputValue.trim()) {
-      const roll = Math.floor(Math.random() * 20) + 1;
+      const roll = Math.floor(Math.random() * 20) + 1; //generates a number between 1-20
+      //FIXME: Perhaps in the future we should add die modifiers like DnD? Things like advantage or bonuses.
       setLastRoll(roll);
-
       socket.emit('player_action', { username, room, message: inputValue, roll: roll });
       setInputValue('');
     }
   };
 
+  //DM Override button
   //sends admin override to server
   const sendOverride = () => {
       if (overrideText.trim()) {
@@ -455,13 +471,15 @@ function App() {
       }
   };
 
-  //handles admin changing the model
+  //AI Model Change Button
+  //handles admin changing the AI model
   const handleModelChange = (modelName) => {
       socket.emit('change_model', { room, model: modelName });
       setCurrentModel(modelName);
       setShowModelModal(false);
   };
 
+  //API Key button
   //inputting a new api key
   const submitNewKey = () => {
       if(newKeyInput.trim().length > 10) {
@@ -474,26 +492,28 @@ function App() {
       }
   };
 
+  //Party View Kick Button
   //kicking a player
   const handleKick = (targetName, e) => {
       e.stopPropagation(); //prevent selecting the card
       setKickTarget(targetName);
       setShowKickModal(true);
   };
-
+  //pop-up to confirm the kicking
+  //FIXME: this uses the stupid default browser pop up
   const confirmKick = () => {
        socket.emit('kick_player', { room, target_name: kickTarget });
        setShowKickModal(false);
   };
 
-  //promotion modal
+  //Party View Promote Button
+  //user promotion modal
   const handlePromote = (targetName, e) => {
-      e.stopPropagation(); //prevent selecting the card
+      e.stopPropagation();          //prevent selecting the card
       setPromoteTarget(targetName);
       setRevokeKeyOnPromote(false); //default unchecked
       setShowPromoteModal(true);
   };
-  
   //submit promotions
   const submitPromote = () => {
       socket.emit('promote_player', { 
@@ -507,7 +527,10 @@ function App() {
   //check to see if everyone is ready so embark button can be enabled
   const allPlayersReady = partyStats.length > 0 && partyStats.every(p => p.is_ready);
   
-  //filters for world sheet tabs
+  //World Sheet Filters
+
+  //FIGURES
+  //grabs the major NPCs and Figures from the worlds.json file 
   const getFigures = () => {
       if(!worldData) return [];
       
@@ -526,8 +549,9 @@ function App() {
       }
       
       // get entity-based deities / gods etc.
+      // FIXME: This is kind of stupid. We shouldn't have to use any explicit names for recognition.
       if(worldData.entities) {
-          const godTypes = ['god', 'deity', 'titan', 'entity', 'lord', 'king', 'queen', 'emperor', 'leader', 'ceo', 'director', 'don'];
+          const godTypes = ['god', 'deity', 'titan', 'entity', 'lord', 'king', 'queen', 'emperor', 'leader', 'ceo', 'director', 'don']; //NOTE: Is this even used anymore?
           worldData.entities.forEach(e => {
               const lowerType = e.type.toLowerCase();
               if(godTypes.some(t => lowerType.includes(t))) {
@@ -547,9 +571,12 @@ function App() {
       return figures;
   };
   
+  //FACTIONS
+  //grabs factions from the worlds.json sheet
   const getFactions = () => {
       if(!worldData || !worldData.entities) return [];
       //filter out things that are individual titles
+      //FIXME: This is legacy and should be removed
       const individualTypes = ['god', 'deity', 'npc', 'character', 'person'];
       return worldData.entities.filter(e => 
           (e.type.toLowerCase().includes('faction') || e.type.toLowerCase().includes('guild') || e.type.toLowerCase().includes('group'))
@@ -557,6 +584,7 @@ function App() {
       );
   };
 
+  //LOCATIONS
   //helper to aggregate locations from both new system and legacy entities
   const getLocations = () => {
       if(!worldData) return [];
@@ -566,6 +594,13 @@ function App() {
 
   const showSheetPrompt = !isLockedIn && nonSystemMessages.length === 0 && activeTab === 'character' && isOwnSheet;
 
+
+  ///////////////////////////////////////////////
+  //                                           //
+  //              RENDERING LOGIC              //
+  //                                           //
+  ///////////////////////////////////////////////
+  
   //render logic for the initial login/lobby screen
   if (gameState === 'login') {
     return (

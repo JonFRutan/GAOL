@@ -1,12 +1,12 @@
 #jfr
 print("------------------------------ GAOL v1.3 ------------------------------")
-import os, json, random, string, time, re
-import traceback
-import google.generativeai as genai
-from flask import Flask, render_template, request
+import                     os, json, random, string, time, re
+import                     google.generativeai as genai
+import                     traceback
+from flask_cors     import CORS
+from dotenv         import load_dotenv
+from flask          import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room as socket_leave_room
-from flask_cors import CORS
-from dotenv import load_dotenv
 
 ##############################
 #         Global Data        #
@@ -220,7 +220,7 @@ class Player:
             'tags' : self.tags,
             'ambition': self.ambition,
             'secret' : self.secret,
-            'is_ready': self.is_ready # persist ready state
+            'is_ready': self.is_ready # remember ready state
             #NOTE: we don't save SID or current_action/roll since they are session specific
             }
 
@@ -508,7 +508,7 @@ def load_worlds():
 # Load Room and Player Data on Startup
 def load_game_state():
     global games
-    # 1. Load Rooms
+    #load rooms
     if os.path.exists(ROOMS_FILE):
         try:
             with open(ROOMS_FILE, 'r') as f:
@@ -524,16 +524,16 @@ def load_game_state():
                     )
                     gr.is_started = r_data.get('is_started', False)
                     gr.history = r_data.get('history', [])
-                    # We flag it as private if json says so, but we might lose the password on restart if not saved.
-                    # For now, we assume public re-entry or data loss of password unless we saved it. 
-                    # Implementation of full persistence would require saving passwords.
+                    # we flag it as private if json says so, but we might lose the password on restart if not saved.
+                    # for now, we assume public re-entry or data loss of password unless we saved it. 
+                    # implementation of full persistence would require saving passwords.
                     
                     games[r_id] = gr
             print(f"[SYSTEM] Loaded {len(games)} active rooms from storage.")
         except Exception as e:
              print(f"[ERROR] Failed to load rooms: {e}")
 
-    # 2. Load Players and assign to Rooms
+    #load players and assign them to rooms
     if os.path.exists(PLAYERS_FILE):
         try:
             with open(PLAYERS_FILE, 'r') as f:
@@ -542,7 +542,7 @@ def load_game_state():
                 for unique_key, p_info in p_data.items():
                     r_id = p_info.get('room_ref')
                     if r_id and r_id in games:
-                        # Create dummy SID until they reconnect
+                        #dummy_sid is just used until their connection is established
                         dummy_sid = f"offline_{p_info['username']}"
                         p = Player(dummy_sid, p_info['username'])
                         p.hp = p_info.get('hp', 100)
@@ -551,8 +551,8 @@ def load_game_state():
                         p.tags = p_info.get('tags', [])
                         p.ambition = p_info.get('ambition', 'Unknown')
                         p.secret = p_info.get('secret', '')
-                        p.is_ready = p_info.get('is_ready', False) # RESTORE READY STATE
-                        p.connect = False # Mark offline initially
+                        p.is_ready = p_info.get('is_ready', False) # restoring their ready state (to avoid them reentering the character sheet)
+                        p.connect = False # mark offline until overwritten
                         
                         games[r_id].players[dummy_sid] = p
                         count += 1
@@ -609,14 +609,16 @@ def save_characters():
     except Exception as e:
         print(f"Error saving characters: {e}")
 
-# Master save function to trigger all saves
+# master save function to trigger all saves
+# NOTE: Not used
 def save_all_data():
     save_worlds()
     save_rooms()
     save_players()
     save_characters()
 
-#clean markdown from JSON responses
+#clean markdown formatting from JSON responses (in case the AI uses it or it bleeds in)
+#you may have seen this happen if you try to get an AI model to format some markdown files.
 def clean_json_response(text):
     clean_text = text.strip()
     if "```json" in clean_text:
@@ -625,6 +627,8 @@ def clean_json_response(text):
         clean_text = clean_text.replace("```", "")
     return json.loads(clean_text)
 
+#this is the function responsible for collating all the prompt information, assembling it, and generating response.
+#this response contains the visually displayed story text, alongside all the world/character updates that must be made.
 def generate_ai_response(game_room, is_embark=False):
     #fetching world context for prompt
     world_context = "Unknown World"
@@ -653,13 +657,18 @@ def generate_ai_response(game_room, is_embark=False):
         #it scans 'history_text' and 'current_actions' to pick the most relevant lore.
         relevant_lore_block = RelevanceEngine.get_relevant_lore(w, history_text, current_actions, limit=8)
 
+    #getting the party's stats in one block for prompt info
     party_stats = game_room.get_party_status_string()
 
+    #special instructions are provided in order to override or force specific behavior in the response
+    #e.g. the following is_embark branch
     special_instructions = ""
+    
+    #done to initialize the game, generates new world info for the players, and offers them some initial direction.
     if is_embark:
         special_instructions = """
         THIS IS THE START OF THE GAME. IGNORE 'PLAYERS JUST DID'. 
-        1. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc). 
+        1. Initialize the story by placing the party in a random starting scenario relevant to the setting (e.g. waking up in a cell, standing on a battlefield, meeting in a tavern, etc) Attempt to provide a "starting point" being a character or object in which to offer the player some initial direction. 
         2. WORLD GENERATION TASK:
            - SCAN all player descriptions, tags, and secrets for named entities (Gods, Patrons, Factions) that are missing from the World Context.
            - Generate a 'new_entities' entry for EACH one found.
@@ -669,6 +678,7 @@ def generate_ai_response(game_room, is_embark=False):
         current_actions = "The party is ready to begin."
     
     #add the admin override if present
+    #these are "forceful" actions, such as creating a new figure or faction, that the AI MUST follow
     if game_room.dm_override:
         special_instructions += f"""
         \n*** URGENT ADMIN OVERRIDE ***
@@ -754,7 +764,7 @@ def generate_ai_response(game_room, is_embark=False):
             
     genai.configure(api_key=active_key) #update the api_key
 
-    # Single attempt logic - No retry loop
+    #single attempt logic
     try:
         response = model.generate_content(prompt, generation_config=generation_config) #generate response
         
@@ -811,14 +821,14 @@ def generate_ai_response(game_room, is_embark=False):
         #         /DEBUGGING         #
         #----------------------------#
 
-        return clean_json_response(response.text) #parse JSON string to Python Dict
+        return clean_json_response(response.text) #parse JSON string to Python dict
     
     except Exception as e:
-        # log the actual error to the backend console for debugging
+        #log the actual error to the backend console for debugging
         print(f"[AI CRITICAL ERROR] Generation failed: {e}")
         traceback.print_exc()
         
-        # return a safe, thematic message to the frontend without raw error codes
+        #return a safe, thematic message to the frontend without raw error codes
         return {
             "story_text": "GAOL has gone silent", 
             "updates": {}, 
@@ -831,7 +841,7 @@ def apply_ai_updates(game, ai_data, room_id):
     world_updates  = ai_data.get('world_updates', [])
     new_entities   = ai_data.get('new_entities', [])
     new_locations  = ai_data.get('new_locations', [])
-    location_updates = ai_data.get('location_updates', {}) # Get updates for existing locations
+    location_updates = ai_data.get('location_updates', {}) #get updates for existing locations
     new_characters = ai_data.get('new_characters', [])
     
     #debugging, sese if entites are being recognized
@@ -893,7 +903,7 @@ def apply_ai_updates(game, ai_data, room_id):
                 )
                 print(f"[LORE] Created NPC: {char.get('name')}")
             
-            save_worlds() # Persist all new lore to /data/worlds.json
+            save_worlds() #save worlds with all the updated/existing lore
             emit('world_update', world.to_dict(), room=room_id)
             
         except Exception as e:
@@ -979,10 +989,6 @@ def process_turn(room_id):
 ########################################################################
 #                         Server Handlers                              #
 ########################################################################
-
-##############################
-#         API Routes         #
-##############################
 
 #root app route
 @app.route('/')
@@ -1088,7 +1094,7 @@ def handle_create_room(data):
 def on_join(data):
     username = data['username']
     room = data['room']
-    req_password = data.get('password') # get provided password if any
+    req_password = data.get('password') #get provided password if any
     sid = request.sid
     join_room(room)
     
@@ -1129,6 +1135,7 @@ def on_join(data):
     save_rooms()
 
     #hot-join player logic
+    #NOTE: I see a potential bug/issue when a player joins and hasn't yet filled out their character sheet. This should be tested.
     if game.is_started:
         p = game.players[sid]
         p.has_acted = True
@@ -1180,8 +1187,8 @@ def handle_get_rooms():
             'setting': g.setting,
             'player_count': len(g.players),
             'is_started': g.is_started,
-            'has_custom_key': bool(g.custom_api_key), #sends if the room has a custom API key
-            'is_private': bool(g.password) #indicates if room is password protected
+            'has_custom_key': bool(g.custom_api_key),   #sends if the room has a custom API key
+            'is_private': bool(g.password)              #indicates if room is password protected
         })
     emit('room_list', room_data)
 
@@ -1230,18 +1237,6 @@ def on_disconnect():
             # Check if the disconnecting player is the host (admin)
             p = game.players[sid]
             p.connected = False
-            #if game.admin_sid == sid:
-            #    # Emit to all players in the room that the host left
-            #    emit('room_closed', {'msg': 'The host has left.'}, room=room_id)
-            #    print(f"Host left. Deleting room: {room_id}")
-            #    del games[room_id]
-            #    save_rooms()
-            #    return
-
-            #name = game.players[sid].username
-            #game.remove_player(sid)
-            #emit('status', {'msg': f'{name} disconnected.'}, room=room_id)
-
             #delete a room if it's empty
             if len(game.players) == 0:
                 print(f"Deleting empty room: {room_id}")
@@ -1347,6 +1342,7 @@ def handle_rejoin(data):
 #handling player ready status in lobby
 @socketio.on('player_ready')
 def handle_player_ready(data):
+    #room stuff
     room = data['room']
     sid = request.sid
     
@@ -1361,7 +1357,9 @@ def handle_player_ready(data):
     player = game.players.get(sid)
     
     if player:
-        # Prevent Overwrite if already ready
+        #prevent overwrite if already ready
+        #this should only be triggered during rejoin situations, where the player already has information saved onto a local file
+        #this file is found at ./data/players.json
         if player.is_ready:
              return
 
@@ -1659,7 +1657,7 @@ def handle_action(data):
         process_turn(room)
 
 if __name__ == "__main__":
-    load_worlds() # load worlds on startup
+    load_worlds()     # load worlds on startup
     load_game_state() # load rooms and players on startup
     
     #this forces any schema updates (like adding missing 'entities' keys) to disk immediately.
