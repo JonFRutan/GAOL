@@ -402,11 +402,17 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
     color: #000;
 }
 
+.nav-btn.ttsmod-btn {
+    color: var(--terminal-green);
+    border-color: var(--terminal-green);
+    font-size: 0.6rem;
+}
+
 /* AI Model Button */
 .nav-btn.model-btn {
     color: #b080ff;
     border-color: #3a2a55;
-    font-size: 0.6rem; /* larger icon/text */
+    font-size: 0.6rem;
 }
 
 .nav-btn.model-btn:hover {
@@ -415,7 +421,7 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
     box-shadow: 0 0 10px rgba(176, 128, 255, 0.4);
 }
 
-/* NEW: API Key Button */
+/* api key button*/
 .nav-btn.key-btn {
     color: var(--tech-cyan);
     border-color: #004d55;
@@ -428,7 +434,7 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
     box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
 }
 
-/* NEW: God Mode Button */
+/* god mode button */
 .nav-btn.god-mode-btn {
     color: var(--accent-gold);
     border-color: var(--accent-dim);
@@ -1325,4 +1331,50 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
 .login-placeholder:hover {
     color: var(--accent-gold); 
     text-shadow: 0 0 8px rgba(255, 193, 7, 0.4);
+}
+
+.slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.slider-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--terminal-green);
+    font-weight: bold;
+}
+
+.terminal-range {
+    -webkit-appearance: none;
+    width: 100%;
+    background: transparent;
+}
+
+.terminal-range:focus {
+    outline: none;
+}
+
+.terminal-range::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 6px;
+    cursor: pointer;
+    background: #111;
+    border: 1px solid #333;
+}
+
+.terminal-range::-webkit-slider-thumb {
+    height: 16px;
+    width: 10px;
+    background: var(--terminal-green);
+    cursor: pointer;
+    -webkit-appearance: none;
+    margin-top: -6px;
+    box-shadow: 0 0 5px var(--terminal-green);
+}
+
+.terminal-range:focus::-webkit-slider-runnable-track {
+    background: #1a1a1a;
 }

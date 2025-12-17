@@ -188,6 +188,7 @@ class Player:
         self.sid = sid              #socket ID of the player for unique validations
         self.username = username    #username of the player / name of their character
         self.connect = True         #track connection status for refreshes
+        self.dc_timer = None        #timer to track disconnect time
         self.hp = 100               #health of the character, starts at 100, 0 is dead.
         self.status = "Healthy"     #e.g. Healthy, Wounded, Unconscious, Dead. Player starts "Healthy"
         self.inventory = []         #inventory of the character (NOTE: This is unused at the moment)
@@ -272,7 +273,11 @@ class GameRoom:
     def all_players_acted(self):
         if not self.players:
             return False
-        return all(p.has_acted for p in self.players.values())
+        active_players = [p for p in self.players.values() if p.connect] #see players who are actually connected to the lobby.
+        #if none of the players in a lobby are connected, return false
+        if not active_players:
+            return False
+        return all(p.has_acted for p in active_players)
 
     #returns true if every player is ready to start (lobby phase)
     def all_players_ready(self):
@@ -432,6 +437,54 @@ class RelevanceEngine:
         top_items = scored_items[:limit]
         
         return "\n".join([item['text'] for item in top_items])
+    
+#runs every 10 seconds, checks for any players who have been disconnected for 300 seconds (5 minutes), and removes them
+def check_disconnect_timers():
+    while True:
+        socketio.sleep(10) #run check every 10 seconds
+        current_time = time.time()
+        timeout_limit = 300 #5 minutes in seconds
+
+        #create list of rooms to modify to avoid iteration errors
+        for room_id, game in list(games.items()):
+            
+            #find players to kick
+            to_kick = []
+            for sid, p in game.players.items():
+                if not p.connect and p.disconnect_time:
+                    if (current_time - p.disconnect_time) > timeout_limit:
+                        to_kick.append(sid)
+            
+            #kick them
+            if to_kick:
+                for sid in to_kick:
+                    p_name = game.players[sid].username
+                    print(f"[TIMEOUT] Removing {p_name} from Room {room_id} (inactive > 5m)")
+                    game.remove_player(sid)
+                    
+                    #notify room of the final removal
+                    emit('status', {'msg': f'{p_name} was removed due to inactivity.'}, room=room_id)
+                
+                save_players()
+
+            #if room is now empty (everyone timed out), delete the room
+            if len(game.players) == 0:
+                print(f"[CLEANUP] Deleting empty Room {room_id}")
+                del games[room_id]
+                save_rooms()
+                continue # Move to next room
+            
+            #if players remain, send update to remove the ghost card
+            if to_kick:
+                game_state_export = [
+                    {
+                        'name': p.username, 'hp': p.hp, 'status': p.status, 
+                        'has_acted': p.has_acted, 'is_ready': p.is_ready, 
+                        'tags': p.tags, 'ambition': p.ambition, 'secret': p.secret, 'description': p.description
+                    } 
+                    for p in game.players.values()
+                ]
+                emit('game_state_update', game_state_export, room=room_id)
 
 ##############################
 #      Loader Functions      #
@@ -958,8 +1011,8 @@ def process_turn(room_id):
         game.dm_override = None
 
     #display the current narrative to the room
-    game.history.append({'sender': 'Gaol', 'text': story_text, 'type': 'story'})
-    emit('message', {'sender': 'Gaol', 'text': story_text}, room=room_id)
+    game.history.append({'sender': 'GAOL', 'text': story_text, 'type': 'story'})
+    emit('message', {'sender': 'GAOL', 'text': story_text}, room=room_id)
     
     #reset everyones turns
     game.reset_turns()
@@ -1113,23 +1166,36 @@ def on_join(data):
             return
 
     current_world = worlds[game.world_id]
-
-    #check for duplicate username
-    if any(p.username == username for p in game.players.values()):
-        emit('status', {'msg': f'ERROR: Name "{username}" is taken.'}, room=sid)
-        return
-    
-    if len(game.players) >= 6:
-        emit('status', {'msg': 'CONNECTION REJECTED: ROOM FULL (MAX 6)'}, room=sid)
-        return
-    
-    #determine "admin" status (first played in the dict is the admin)
-    is_admin = False
-    if len(game.players) == 0:
-        is_admin = True
-        game.admin_sid = sid # Set the admin SID to the creator/first joiner
-
-    game.add_player(sid, username)
+    #check for ghost player to reclaim
+    target_ghost = next((p for p in game.players.values() if p.username == username and not p.connect), None)
+    if target_ghost:
+        #reclaiming the ghost, remove their old SID, add a new SID, and preserve their player object
+        old_sid = target_ghost.sid
+        if old_sid in game.players:
+            del game.players[old_sid]
+        target_ghost.sid = sid
+        target_ghost.connect = True
+        game.players[sid] = target_ghost
+        #if the ghost was an admin, reassign the admin rights
+        if game.admin_sid == old_sid or game.admin_sid == f"offline_{username}":
+            game.admin_sid = sid
+    #other standard checks
+    else:
+        #if username is taken, reject
+        if any(p.username == username for p in game.players.values()):
+            emit('status', {'msg': f'ERROR: Name "{username}" is taken.'}, room=sid)
+            return
+        #if lobby is full, reject
+        if len(game.players) >= 6:
+            emit('status', {'msg': 'CONNECTION REJECTED: ROOM FULL (MAX 6)'}, room=sid)
+            return
+        
+        #determine "admin" status (first played in the dict is the admin)
+        is_admin = False
+        if len(game.players) == 0:
+            is_admin = True
+            game.admin_sid = sid # Set the admin SID to the creator/first joiner
+        game.add_player(sid, username)
 
     save_players()
     save_rooms()
@@ -1149,6 +1215,7 @@ def on_join(data):
     #sending history ensures late joiners don't see the 'waiting for host' screen
     emit('join_success', {
         'room': room, 
+        'username': username,
         'world': current_world.name,
         'world_details': current_world.to_dict(), #send full world details
         'is_admin': is_admin, # pass admin flag to frontend
@@ -1236,13 +1303,9 @@ def on_disconnect():
         if sid in game.players:
             # Check if the disconnecting player is the host (admin)
             p = game.players[sid]
-            p.connected = False
-            #delete a room if it's empty
-            if len(game.players) == 0:
-                print(f"Deleting empty room: {room_id}")
-                del games[room_id]
-                save_rooms() #update the rooms json before clearing it's data
-                continue
+            p.connect = False
+            p.dc_timer = time.time()
+            print(f"[CONNECTION] {p.username} disconnected. Grace period (5 Minutes) started.")
 
             save_players() #make a save of the players in the room
             save_rooms()   #make a save of the rooms
@@ -1293,8 +1356,8 @@ def handle_rejoin(data):
                 del game.players[old_sid]
             
             target_player.sid = new_sid
-            target_player.connected = True
-            
+            target_player.connect = True
+            target_player.dc_timer = None #stop the DC timer
             # if player has data but is marked 'not ready' (due to refresh or legacy file), force ready.
             if target_player.description and len(target_player.tags) > 0 and not target_player.is_ready:
                 print(f"[SYSTEM] Auto-locking player {username} due to existing data.")
@@ -1314,6 +1377,7 @@ def handle_rejoin(data):
             #emit Success with the is_admin flag
             emit('join_success', {
                 'room': room_id, 
+                'username': username,
                 'world': current_world.name,
                 'world_details': current_world.to_dict(), 
                 'is_admin': was_admin,  #explicitly send the captured status
@@ -1417,8 +1481,8 @@ def handle_embark(data):
     story_text = ai_data.get('story_text', 'The adventure begins...')
     
     #display the current narrative to the room
-    game.history.append({'sender': 'Gaol', 'text': story_text, 'type': 'story'})
-    emit('message', {'sender': 'Gaol', 'text': story_text}, room=room)
+    game.history.append({'sender': 'GAOL', 'text': story_text, 'type': 'story'})
+    emit('message', {'sender': 'GAOL', 'text': story_text}, room=room)
     
     save_rooms() #save the room and begin saving history
 
@@ -1668,4 +1732,5 @@ if __name__ == "__main__":
         default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
         worlds[default_world.id] = default_world
         save_worlds()
+    socketio.start_background_task(check_disconnect_timers) #starts the disconnect timer checker
     socketio.run(app, debug=True, port=5000)

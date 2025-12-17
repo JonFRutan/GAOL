@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { debugLog } from './utils/logger.js'; //debugging logger
+import SamJs from 'sam-js';
 import io from 'socket.io-client';
 import './App.css';
 
@@ -90,6 +91,62 @@ function App() {
   const [kickTarget, setKickTarget] = useState('');
   //world creation menu constant
   const [showCreateModal, setShowCreateModal] = useState(false);
+  //TTS stuff
+  //Audio context refs
+  const audioCtxRef = useRef(null);
+  const gainNodeRef = useRef(null);
+  //TTS toggle state
+  const [ttsEnabled, setTtsEnabled] = useState(false)
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  //SAM initialization
+  const [samConfig, setSamConfig] = useState({
+      pitch: 64,    // Default: 64. Lower (30-50) & Higher (100+) 
+      speed: 72,    // Default: 72. lower is slower higher is faster
+      throat: 128,  // Default: 128. modify timbre / roughness of voice
+      mouth: 128,   // Default: 128. modifies vowel pronunciation
+      volume: 50    // Default: 50. Volume of SAM. this actually modifies our gain node, not SAMs gain directly
+  });
+  const [sam, setSam] = useState(null);
+
+
+
+  //helper function that plays text with the users defined configurations
+  const playTTS = (text, config) => {
+      const audioCtx = audioCtxRef.current;
+      const gainNode = gainNodeRef.current;
+      //make sure the audio context actually exists, and that the volume isn't set to 0
+      if (!audioCtx || !gainNode) return;
+      if (Number(config.volume) <= 0) return;
+      //resume audio if the browser has suspended it (tabbing out)
+      if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+      }
+      //clean out markdown text since SAM may choke on it
+      const cleanText = text.replace(/[*_#`]/g, ''); 
+      // generate audio with SAM, to be exported as a buffer
+      const tempSam = new SamJs({
+          pitch: Number(config.pitch),
+          speed: Number(config.speed),
+          throat: Number(config.throat),
+          mouth: Number(config.mouth)
+      });
+      try {
+          //grab the raw audio buffer
+          const audioData = tempSam.buf32(cleanText);
+          if (audioData && audioData.length > 0) {
+              //sample rate is 22050? https://github.com/pschatzmann/arduino-SAM says this so I'm trusting it for the audio buffer
+              const buffer = audioCtx.createBuffer(1, audioData.length, 22050);
+              buffer.getChannelData(0).set(audioData);
+              const source = audioCtx.createBufferSource();
+              source.buffer = buffer;
+              // route the audio through the gain node, so we can actually control the volume of SAM
+              source.connect(gainNode);
+              source.start();
+          }
+      } catch (e) {
+          console.error("SAM Audio Error:", e);
+      }
+  };
 
   //////////////////////////////////////
   //             useEffects           //
@@ -100,6 +157,7 @@ function App() {
   //checks local storage for a previously saved api key on mount
   //runs once at start, then never again.
   useEffect(() => {
+    window.speechSynthesis.getVoices(); //grabs voices to initialize
     const savedKey = localStorage.getItem('gaol_api_key');
     if (savedKey) {
         setCustomApiKey(savedKey);
@@ -121,6 +179,48 @@ function App() {
         }
     }
   }, []); // the empty array at the end here tells use it only runs once at the very start.
+
+    //initialize the web audio api
+    useEffect(() => {
+        // create AudioContext 
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) {
+            const ctx = new AudioContext();
+            const gain = ctx.createGain();
+            
+            // Connect Gain -> Destination
+            gain.connect(ctx.destination);
+            
+            audioCtxRef.current = ctx;
+            gainNodeRef.current = gain;
+        }
+    }, []);
+
+   //initializing the SAM instance on mount
+   useEffect(() => {
+      const s = new SamJs({
+          pitch: Number(samConfig.pitch),
+          speed: Number(samConfig.speed),
+          throat: Number(samConfig.throat),
+          mouth: Number(samConfig.mouth)
+      });
+      setSam(s);
+  }, [samConfig]);
+
+   //handle the volume sliders
+   useEffect(() => {
+      if (gainNodeRef.current) {
+          // Convert 0-100 slider to 0.0-1.0 gain
+          const vol = samConfig.volume / 100;
+          gainNodeRef.current.gain.value = vol * vol; 
+      }
+  }, [samConfig.volume]);
+  
+  //prevent infinite repetition
+  const samConfigRef = useRef(samConfig);
+  useEffect(() => {
+      samConfigRef.current = samConfig;
+  }, [samConfig]);
 
   //ask for all the world information from the backend.
   //runs once at start, then never again.
@@ -190,7 +290,7 @@ function App() {
       setIsEmbarking(false); // reset embark state
       setShowOverrideModal(false); // reset override state
       
-      localStorage.setItem('gaol_session', JSON.stringify({ username: username, room: data.room }));
+      localStorage.setItem('gaol_session', JSON.stringify({ username: data.username, room: data.room }));
     });
     //END LOGIN VIEW
     
@@ -259,6 +359,18 @@ function App() {
   const myStats = partyStats.find(p => p.name === username) || { 
     name: username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: '', is_ready: false //default stuff
   };
+
+  //TTS effects for story text, uses Software Automatic Mouth, an old piece of software.
+  // TTS effects for story text
+  useEffect(() => {
+    if (!ttsEnabled || messages.length === 0 || !sam) return;
+    const lastMsg = messages[messages.length - 1]; 
+    
+    if (lastMsg.sender === 'GAOL') { 
+        //send to the playTTS function
+        playTTS(lastMsg.text, samConfigRef.current);
+    }
+  }, [messages, ttsEnabled]);
 
   //syncs local form state with incoming server data for the user
   useEffect(() => {
@@ -417,7 +529,7 @@ function App() {
       if(room) {
           socket.emit('leave_room', { room });
       }
-      // Reset local state
+      //reset local state
       setGameState('login');
       setRoom('');
       setMessages([]);
@@ -629,7 +741,7 @@ function App() {
 
               <div className="form-row">
                 <label className="login-label">Username</label>
-                <input placeholder="e.g. Shadowhawk30" onChange={e => setUsername(e.target.value)} />
+                <input placeholder="e.g. Shadowhawk30" vale={username} onChange={e => setUsername(e.target.value)} />
               </div>
 
               <div className="form-row">
@@ -859,7 +971,6 @@ function App() {
                 </div>
             </div>
         )}
-
         {/* World Creation Modal */}
         {showCreateModal && (
             <div className="about-modal-overlay">
@@ -937,13 +1048,33 @@ function App() {
           <button className="nav-btn leave-btn" onClick={handleLeave} title="Leave Room">
              LEAVE
           </button>
+          {/* TTS Toggle Button */}
+          <button 
+            className={`nav-btn ${ttsEnabled ? 'active' : ''}`} 
+            onClick={() => setTtsEnabled(!ttsEnabled)} 
+            title="Toggle Text-to-Speech"
+            style={{ 
+                color: ttsEnabled ? 'var(--terminal-green)' : '#555',
+                borderColor: ttsEnabled ? 'var(--terminal-green)' : '#333'
+            }}
+           >
+         {ttsEnabled ? 'TTS ON' : 'TTS OFF'}
+            </button>
+          {/* TTS Options Button */}
+            <button 
+                className={`nav-btn ttsmod-btn ${showVoiceModal ? 'active' : ''}`}
+                onClick={() => setShowVoiceModal(true)}
+                title="Voice Settings"
+            >
+                Modify TTS 
+            </button>
           {/* Admin Model Switcher */}
           {isAdmin && (
               <button className="nav-btn model-btn" onClick={() => setShowModelModal(true)} title="Change AI Model">
                  MODEL
               </button>
           )}
-          {/* Admin API Key Button (New Feature) */}
+          {/* Admin API Key Button */}
           {isAdmin && (
               <button className="nav-btn key-btn" onClick={() => setShowKeyModal(true)} title="Update API Key">
                  KEY
@@ -989,12 +1120,12 @@ function App() {
 
           {/* chat history mapping */}
           {messages.map((m, i) => (
-            <div key={i} className={`message-block ${m.sender === 'Gaol' ? 'gaol-msg' : 'player-msg'}`}>
+            <div key={i} className={`message-block ${m.sender === 'GAOL' ? 'gaol-msg' : 'player-msg'}`}>
               <div className="msg-header">
-                {m.sender === 'Gaol' ? 'GAOL:' : (m.sender === 'System' ? 'SYS:' : 'Actions:')}
+                {m.sender === 'GAOL' ? 'GAOL:' : (m.sender === 'System' ? 'SYS:' : 'Actions:')}
               </div>
               <div className="msg-body" style={{color: m.sender === 'System' ? '#555' : 'inherit', fontStyle: m.sender === 'System' ? 'italic' : 'normal'}}>
-                {m.sender !== 'Gaol' && m.sender !== 'System' && <span className="player-name">{m.sender}<br></br></span>}
+                {m.sender !== 'GAOL' && m.sender !== 'System' && <span className="player-name">{m.sender}<br></br></span>}
                 {m.text}
               </div>
             </div>
@@ -1010,7 +1141,7 @@ function App() {
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendAction()}
             placeholder="Describe your action..."
-            /* FIX: Filter out System messages so model changes don't enable chat too early */
+            /* filter out system messages so model changes don't enable chat too early */
             disabled={nonSystemMessages.length === 0} 
           />
           {/* Dice - Eventually we'll have frames to animate this rolling process */}
@@ -1250,7 +1381,124 @@ function App() {
           )}
         </div>
       </div>
-      
+        {/* Voice Settings Modal */}
+        {showVoiceModal && (
+            <div className="about-modal-overlay">
+                <div className="about-modal-box">
+                    <h2 style={{color:'var(--terminal-green)', borderColor:'#004d00'}}>Configure SAM</h2>
+                    <p style={{color:'#666', marginBottom:'20px', fontSize:'0.8rem', fontStyle:'italic'}}>
+                        Configuring Software Automatic Mouth (S.A.M.)
+                    </p>
+                    
+                    <div className="slider-container" style={{width:'100%', display:'flex', flexDirection:'column', gap:'15px'}}>
+                        
+                        {/* Pitch Slider */}
+                        <div className="slider-row">
+                            <div className="slider-label">
+                                <span>PITCH</span>
+                                <span>{220 - samConfig.pitch}</span>
+                            </div>
+                            <input 
+                                type="range" min="20" max="200" 
+                                //flipped so the slider is more intuitive, otherwise making the value higher would lower the pitch
+                                value={220 - samConfig.pitch} 
+                                onChange={e => setSamConfig({
+                                    ...samConfig, 
+                                    pitch: 220 - Number(e.target.value)
+                                })}
+                                className="terminal-range"
+                            />
+                        </div>
+
+                        {/* Speed Slider */}
+                        <div className="slider-row">
+                            <div className="slider-label">
+                                <span>SPEED</span>
+                                <span>{230 - samConfig.speed}</span>
+                            </div>
+                            <input 
+                                type="range" min="30" max="200" 
+                                // INVERTED VALUE MAPPING - speed for SAM is "flipped" and actually refers the the time between ununciations, so we flip it to make it more intuitive
+                                value={230 - samConfig.speed}
+                                onChange={e => setSamConfig({
+                                    ...samConfig, 
+                                    speed: 230 - Number(e.target.value)
+                                })}
+                                className="terminal-range"
+                            />
+                        </div>
+
+                        {/* Throat Slider */}
+                        <div className="slider-row">
+                            <div className="slider-label">
+                                <span>THROAT</span>
+                                <span>{samConfig.throat}</span>
+                            </div>
+                            <input 
+                                type="range" min="10" max="255" 
+                                value={samConfig.throat}
+                                onChange={e => setSamConfig({...samConfig, throat: e.target.value})}
+                                className="terminal-range"
+                            />
+                        </div>
+
+                        {/* Mouth Slider */}
+                        <div className="slider-row">
+                            <div className="slider-label">
+                                <span>MOUTH</span>
+                                <span>{samConfig.mouth}</span>
+                            </div>
+                            <input 
+                                type="range" min="10" max="255" 
+                                value={samConfig.mouth}
+                                onChange={e => setSamConfig({...samConfig, mouth: e.target.value})}
+                                className="terminal-range"
+                            />
+                        </div>
+
+                        {/* Divider */}
+                        <div style={{borderBottom:'1px solid #333', margin:'5px 0'}}></div>
+
+                         {/* Volume Slider (Software Gate) */}
+                         <div className="slider-row">
+                            <div className="slider-label">
+                                <span>VOLUME</span>
+                                <span>{samConfig.volume}%</span>
+                            </div>
+                            <input 
+                                type="range" min="0" max="100" 
+                                value={samConfig.volume}
+                                onChange={e => setSamConfig({...samConfig, volume: e.target.value})}
+                                className="terminal-range"
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{display:'flex', gap:'10px', width:'100%', marginTop:'25px'}}>
+                        <button 
+                            className="join-sm-btn" 
+                            style={{flex:1, borderColor:'#555', color:'#888'}} 
+                            onClick={() => {
+                                // Reset to defaults
+                                setSamConfig({pitch: 64, speed: 72, throat: 128, mouth: 128, volume: 50});
+                            }}
+                        >
+                            RESET
+                        </button>
+                        <button 
+                            className="action-btn" 
+                            style={{flex:1, marginTop:0, background:'var(--terminal-green)'}} 
+                            onClick={() => {
+                                setShowVoiceModal(false);
+                                playTTS("GAOL has spoken.", samConfig); // test phrase
+                            }}
+                        >
+                            CONFIRM
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
         {/* Model Selection Modal */}
         {showModelModal && (
              <div className="about-modal-overlay">
