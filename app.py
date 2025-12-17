@@ -1720,6 +1720,7 @@ def handle_action(data):
     else:
         process_turn(room)
 
+    print("[SYSTEM] Initializing GAOL context...")
     load_worlds()     # load worlds on startup
     load_game_state() # load rooms and players on startup
     
@@ -1733,7 +1734,7 @@ def handle_action(data):
         save_worlds()
 
     socketio.start_background_task(check_disconnect_timers) #starts the disconnect timer checker
-    
+
 if __name__ == "__main__":
     print("[MAIN] Executed, worlds and game states will be loaded.")
     socketio.run(app, debug=True, port=5000)
