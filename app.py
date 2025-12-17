@@ -1,5 +1,5 @@
 #jfr
-print("------------------------------ GAOL v1.3 ------------------------------")
+print("------------------------------ GAOL v1.4 ------------------------------")
 import                     os, json, random, string, time, re
 import                     google.generativeai as genai
 import                     traceback
@@ -1721,6 +1721,7 @@ def handle_action(data):
         process_turn(room)
 
 if __name__ == "__main__":
+    print("[MAIN] Executed, worlds and game states will be loaded.")
     load_worlds()     # load worlds on startup
     load_game_state() # load rooms and players on startup
     
