@@ -1720,20 +1720,20 @@ def handle_action(data):
     else:
         process_turn(room)
 
-    print("[SYSTEM] Initializing GAOL context...")
-    load_worlds()     # load worlds on startup
-    load_game_state() # load rooms and players on startup
-    
-    #this forces any schema updates (like adding missing 'entities' keys) to disk immediately.
-    save_worlds() 
+print("[SYSTEM] Initializing GAOL context...")
+load_worlds()     # load worlds on startup
+load_game_state() # load rooms and players on startup
 
-    #seed a default world if empty
-    if not worlds:
-        default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
-        worlds[default_world.id] = default_world
-        save_worlds()
+#this forces any schema updates (like adding missing 'entities' keys) to disk immediately.
+save_worlds() 
 
-    socketio.start_background_task(check_disconnect_timers) #starts the disconnect timer checker
+#seed a default world if empty
+if not worlds:
+    default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
+    worlds[default_world.id] = default_world
+    save_worlds()
+
+socketio.start_background_task(check_disconnect_timers) #starts the disconnect timer checker
 
 if __name__ == "__main__":
     print("[MAIN] Executed, worlds and game states will be loaded.")
