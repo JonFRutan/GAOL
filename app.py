@@ -1720,8 +1720,6 @@ def handle_action(data):
     else:
         process_turn(room)
 
-if __name__ == "__main__":
-    print("[MAIN] Executed, worlds and game states will be loaded.")
     load_worlds()     # load worlds on startup
     load_game_state() # load rooms and players on startup
     
@@ -1733,5 +1731,9 @@ if __name__ == "__main__":
         default_world = World("GAOL-1", "Medieval Fantasy", "High", "The original timeline.")
         worlds[default_world.id] = default_world
         save_worlds()
+
     socketio.start_background_task(check_disconnect_timers) #starts the disconnect timer checker
+    
+if __name__ == "__main__":
+    print("[MAIN] Executed, worlds and game states will be loaded.")
     socketio.run(app, debug=True, port=5000)
