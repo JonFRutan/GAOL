@@ -1,5 +1,5 @@
 <div align="center">
-<img style="width:10%"src="client/public/GaolIcon_.png">
+<img style="width:20%"src="client/public/GaolIcon_.png">
 
 # G A O L
 
