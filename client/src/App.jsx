@@ -720,8 +720,17 @@ function App() {
         
         {/* Left Sidebar for Login */}
         <div className="login-sidebar">
-            <h1>GAOL</h1>
-            
+            {loginMode === 'join' && (
+                <>
+                <img class="thumbnail-image" src="GaolIcon_.png"></img>
+                <h1>GAOL</h1>
+                </>
+              )}
+            {loginMode === 'create' && (
+                <>
+                <h1 style={{fontSize:'2rem'}}>GAOL</h1>
+                </>
+              )}
             <div className="login-box">
               {/* toggles between join and create modes */}
               <div className="toggle-bar">
@@ -753,7 +762,7 @@ function App() {
                 />
               </div>
 
-              {/* conditional rendering for creation inputs */}
+              {/* conditional rendering for creation inputs */} 
               {loginMode === 'create' && (
                 <>
                   {/* optional password field */}

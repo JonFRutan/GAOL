@@ -755,6 +755,11 @@ def generate_ai_response(game_room, is_embark=False):
     #the prompt below is quite complicated and contains A LOT of information.
     #it should all be self-explanatory by the context and the variable names.
     #the AI model returns a JSON formatted response that the server parses in order to update player/world states. 
+
+    #FIXME -
+    # We should move some of the prompt instructions into the "system_instruction" that have been introduced into the new Gemini SDK.
+    # This would look like such:
+    # response = game_room.ai_client.models.generate_content(model=game_room.ai_model, config=generation_config, content=prompt, system_instruction="You are GAOL, a dungeon master AI...")
     prompt = f"""
     You are GAOL, a Dungeon Master AI. 
 
