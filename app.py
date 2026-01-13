@@ -1,8 +1,9 @@
 #jfr
 print("------------------------------ GAOL v1.4 ------------------------------")
 import                     os, json, random, string, time, re
-import                     google.generativeai as genai
 import                     traceback
+from google         import genai
+from google.genai   import types
 from flask_cors     import CORS
 from dotenv         import load_dotenv
 from flask          import Flask, render_template, request
@@ -34,7 +35,8 @@ if DEFAULT_API_KEY:
 else:
     print("[SYSTEM] Server API Key Loaded: NO (User must provide key)")
 
-model = genai.GenerativeModel('gemini-2.5-flash-lite')
+#FIXME - This needs to be removed
+#model = genai.GenerativeModel('gemini-2.5-flash-lite')
 
 #file path for persistent data storage
 #get the absolute path of the directory where app.py is located
@@ -55,13 +57,13 @@ worlds = {}
 games = {}
 
 #gemini configurations
-generation_config = {
-    "temperature": 1,
-    "top_p": 0.95,
-    "top_k": 64,
-    "max_output_tokens": 8192,
-    "response_mime_type": "application/json",
-}
+generation_config = types.GenerateContentConfig(
+    temperature=1,
+    top_p=0.95,
+    top_k=64,
+    max_output_tokens=8192,
+    response_mime_type="application/json"
+)
 
 ########################################################################
 #                            Data Classes                              #
@@ -259,6 +261,15 @@ class GameRoom:
         self.is_started = False                 #has the room started the gameplay loop yet?
         self.admin_sid = None                   #track who the host is
         self.dm_override = None                 #stores admin override instructions for next turn
+
+        if custom_api_key:
+            self.ai_client =  genai.Client(api_key=custom_api_key)
+        elif DEFAULT_API_KEY:
+            self.ai_client = genai.Client(api_key=custom_api_key)
+        else:
+            self.ai_client = None
+
+        self.ai_model = "gemini-2.5-flash-lite" #ai model the room is using for generation
 
     #add a player into the room.
     def add_player(self, sid, username):
@@ -815,11 +826,10 @@ def generate_ai_response(game_room, is_embark=False):
     if not active_key:
             return {"story_text": "CRITICAL ERROR: No Gemini API Key provided. Enter one in Room Creation or check server .env config.", "updates": {}, "world_updates": []}
             
-    genai.configure(api_key=active_key) #update the api_key
-
-    #single attempt logic
     try:
-        response = model.generate_content(prompt, generation_config=generation_config) #generate response
+        #FIXME - This should take the place of the line below
+        response = game_room.ai_client.models.generate_content(model=game_room.ai_model, contents=prompt, config=generation_config)
+        #response = model.generate_content(prompt, generation_config=generation_config) #generate response
         
         #----------------------------#
         #          DEBUGGING         #
@@ -1549,9 +1559,8 @@ def handle_model_change(data):
         emit('status', {'msg': 'UNAUTHORIZED.'}, room=sid)
         return
 
-    global model
     try:
-        model = genai.GenerativeModel(new_model_name)
+        room.ai_model = genai.GenerativeModel(new_model_name)
         print(f"[ADMIN] System Model Switched to: {new_model_name}")
         
         #broadcast the shift message
