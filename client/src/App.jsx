@@ -722,7 +722,7 @@ function App() {
         <div className="login-sidebar">
             {loginMode === 'join' && (
                 <>
-                <img class="thumbnail-image" src="gaol.jfelix.space/assets/GaolIcon.png"></img>
+                <img class="thumbnail-image" src="/GaolIcon.png"></img>
                 <h1>GAOL</h1>
                 </>
               )}
