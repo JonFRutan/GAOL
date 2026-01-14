@@ -1,6 +1,10 @@
 #jfr
 #This is for storing data classes, to simplify the content of 'app.py'
-import random, string
+import random, string, os
+from google         import genai
+from dotenv         import load_dotenv
+
+
 
 
 #generic class for locations, cities, landmarks, etc.
@@ -119,6 +123,7 @@ class World:
         }
 
 #stores information about players
+#this is used primarily both by the AI for player info, and by the game rooms for managing player state
 class Player:
     def __init__(self, sid, username):
         self.sid = sid              #socket ID of the player for unique validations
@@ -186,6 +191,13 @@ class Character:
 #stores information about the game room
 class GameRoom:
     def __init__(self, room_id, setting="Medieval Fantasy", realism="High", world_id=None, custom_api_key=None, password=None):
+        #See if the default API key is there, if so grab it.
+        load_dotenv()
+        raw_key = os.getenv("GEMINI_API_KEY")
+        #if the .env field is empty or just whitespace, treat it as none
+        DEFAULT_API_KEY = raw_key.strip() if raw_key and raw_key.strip() else None
+
+        #Room values
         self.room_id = room_id                  #unique ID of the room for people to join
         self.setting = setting                  #setting of the world the room is using
         self.realism = realism                  #how realistic should the room behave?
