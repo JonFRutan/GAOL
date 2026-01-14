@@ -51,6 +51,23 @@ class Location:
             "keywords": self.keywords
         }
 
+#Biology that lives within the world, flora & fauna
+class Biology:
+    def __init__(self, name, description, habitat, disposition):
+        self.id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        self.name = name
+        self.description = description
+        self.habitat = habitat
+        self.disposition = disposition
+    
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "description" : self.description,
+            "habitat": self.habitat,
+            "disposition" : self.disposition
+        }
+
 #storing persistent world data, major events, setting, description, etc.
 class World:
     def __init__(self, name, setting="Medieval Fantasy", realism="High", description="A mysterious realm.", width=1024, height=512):
@@ -63,6 +80,7 @@ class World:
         self.entities = []                                                               #list of WorldEntity objects (Abstract concepts: Factions, Gods)
         self.characters = []                                                             #list of characters within the world
         self.locations = []                                                              #list of Location objects (Physical places with coordinates)
+        self.biology = []                                                                #list of Biology that lives within the world
         self.width = width                                                               #Arbitrary world width
         self.height = height                                                             #Arbitrary world height
 
@@ -93,6 +111,7 @@ class World:
 
     #adding a new physical location to the world
     def add_location(self, name, type_tag, description, x, y, radius, affiliation="Independent", keywords=[]):
+        #make sure name is unique
         if any(l.name.lower() == name.lower() for l in self.locations):
             return
         new_loc = Location(name, type_tag, description, x, y, radius, affiliation, keywords)
@@ -101,10 +120,19 @@ class World:
 
     #adding characters to the world entitites
     def add_character(self, name, description, role, affiliation, status="Alive"):
+        #make sure name is unique
         if any(c.name.lower() == name.lower() for c in self.characters):
             return
         new_character = Character(name, description, role, affiliation, status)
         self.characters.append(new_character)
+
+    #adding new biology to the world
+    def add_biology(self, name, description, habitat, disposition):
+        #make sure name is unique
+        if any(b.name.lower() == name.lower() for b in self.biology):
+            return
+        new_biology = Biology(name, description, habitat, disposition)
+        self.biology.append(new_biology)
     
     #helper to convert object to dict for json saving
     def to_dict(self):
@@ -119,7 +147,8 @@ class World:
             'major_events': self.major_events,
             'entities': [e.to_dict() for e in self.entities],
             'characters': [c.to_dict() for c in self.characters],
-            'locations': [l.to_dict() for l in self.locations]
+            'locations': [l.to_dict() for l in self.locations],
+            'biology' : [b.to_dict() for b in self.biology]
         }
 
 #stores information about players

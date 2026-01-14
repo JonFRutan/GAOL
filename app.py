@@ -3,7 +3,7 @@ print("------------------------------ GAOL v1.5 ------------------------------")
 import                     os, json, random, string, time, re
 import                     traceback
 from google         import genai
-from google.genai   import types
+from google.genai   import types, errors
 from flask_cors     import CORS
 from dotenv         import load_dotenv
 from flask          import Flask, render_template, request
@@ -71,11 +71,16 @@ generation_config = types.GenerateContentConfig(
     3. Update player stats (HP, Status, Tags, Description) if changed. When updating a character description, try to retain the original information unless it's been explicitly modified. (I.e. Reinclude necessary backstory from a description)
     4. **WORLD BUILDING:** If the story introduces a NEW important Faction, City, Landmark, or Named Individual, you MUST create them in the JSON output.
        - Do not create entities for trivial things (e.g. "a wooden chair"). Only persistent lore.
-       - "new_entities" are for Groups, Factions, Guilds, or Abstract Deities.
+       - "new_group" are for Groups, Factions, Guilds, Cults, etc.
        - "new_locations" are for PHYSICAL places (Cities, Villages, Landmarks). Provide X,Y coordinates. Include 'affiliation' (who controls it) and 'keywords'.
        - "new_characters" are for Named Individuals. This includes major characters like Villains, Kings, CEOs, Godfathers, or powerful figures. Include 'affiliation' and 'keywords'
-       - "new_biology" are for flora / fauna specific to the world. (e.g. "Tarcrabs") These should include a found "location" and general "disposition" (hostile, territorial, peaceful, etc.)
+       - "new_biology" are for biological creatures, plants, flora / fauna specific to the world. (e.g. "Tarcrabs") These should include a found "location" and general "disposition" (hostile, territorial, peaceful, etc.) THIS IS FOR LIVING, BIOLOGICAL ENTITIES ONLY. Not a catch-all for environmental setpieces.
     5. **UPDATING WORLD:** Use "location_updates" to change the affiliation or description of an existing location (e.g. if a faction takes over a city).
+       - For reference, updateable fields for the following are as such:
+       - "entities"   - "type", "description", "keywords"
+       - "locations"  - "type", "description", "radius", "affiliation", "keywords"
+       - "characters" - "description", "role", "affiliation", "status", "keywords"
+       - "biology"    - "description", "habitat"
     6. Return ONLY a JSON object with this exact schema:
     
     {{
@@ -92,7 +97,7 @@ generation_config = types.GenerateContentConfig(
       "entity_updates": {{
           "Garrick": {{"status": "Captured", "description": "Former general of the Iron Legion Army, now imprisoned by rebels." }}
       }},
-      "new_entities": [
+      "new_group": [
           {{ "name": "The Iron Legion", "type": "Faction", "description": "A mercenary army.", "keywords": ["war", "mercenary", "iron"] }}
       ],
       "new_locations": [
@@ -101,6 +106,9 @@ generation_config = types.GenerateContentConfig(
       "new_characters": [
           {{ "name": "Garrick", "role": "General", "affiliation": "Iron Legion", "description": "A gruff dwarf who leads the Iron Legion Army.", "status": "Alive"}},
           {{ "name": "Don Corleone", "role": "Godfather", "affiliation": "The Mafia", "description": "Head of the family." }}
+      ],
+      "new_biology": [
+          {{ "name": "Tarcrab", "description": "Large, pitch-black crabs who slowly move through tar, known for hunting people.", "habitat": "Tar Pits", "disposition": "Aggressive"}}
       ]
     }}
     7. NOT EVERYTHING NEEDS TO BE CHANGED OR UPDATED EVERY TURN. If nothing worth preserving happened to a player, world, or entity, omit them from the updates.
@@ -564,89 +572,96 @@ def generate_ai_response(game_room, is_embark=False):
     #if neither - return an error
     if not active_key:
             return {"story_text": "CRITICAL ERROR: No Gemini API Key provided. Enter one in Room Creation or check server .env config.", "updates": {}, "world_updates": []}
-            
-    try:
-        response = game_room.ai_client.models.generate_content(model=game_room.ai_model, contents=prompt, config=generation_config)
-        
-        #----------------------------#
-        #          DEBUGGING         #
-        #----------------------------#
-        
-        #save the last raw response to disk as `./data/last_gen.json`
+
+    retry_count = 3 #try three times
+    tries = 0       #index at 0
+    while tries < retry_count:   
         try:
-            debug_dump = {
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "prompt": prompt,
-                "raw_response": response.text
-            }
-            with open(os.path.join(DATA_DIR, 'last_gen.json'), 'w') as f:
-                json.dump(debug_dump, f, indent=2)
-        except Exception as e:
-            print(f"[DEBUG ERROR] Could not dump last_gen: {e}")
-
-        #save token inputs and outputs alongside a timestamp to get an overview of token usage.
-        if response.usage_metadata:
-            input_tokens = response.usage_metadata.prompt_token_count
-            output_tokens = response.usage_metadata.candidates_token_count
-            total_tokens = response.usage_metadata.total_token_count
-            print(f"[PROMPT INPUT TOKENS] - {input_tokens} | [RESPONSE OUTPUT TOKENS] - {output_tokens} | [TOTAL TOKEN USAGE] - {total_tokens}")
-            print(f"[TOKEN AUDIT] % of Minute Limit: {(input_tokens / 1000000) * 100:.4f}%") # based on 1M TPM limit
-
+            #the actual response generation
+            #if an error occurs here, it will see if it's a code '503' (model overload), if so it will retry the prompt.
+            response = game_room.ai_client.models.generate_content(model=game_room.ai_model, contents=prompt, config=generation_config)
+            
+            #save the last raw response to disk as `./data/last_gen.json`
             try:
-                audit_file = os.path.join(DATA_DIR, 'token_audit.json')
-                audit_data = []
-                #read existing audit log if it exists
-                if os.path.exists(audit_file):
-                    with open(audit_file, 'r') as f:
-                        try:
-                            audit_data = json.load(f)
-                        except json.JSONDecodeError:
-                            audit_data = [] #start fresh if corrupted
-                
-                #append the new entity
-                audit_data.append({
+                debug_dump = {
                     "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    "input": input_tokens,
-                    "output": output_tokens,
-                    "total": total_tokens,
-                    "world": worlds[game_room.world_id].name,
-                    "player_count": len(game_room.players),
-                    "ai_model": game_room.ai_model
-                })
-                
-                #write back to file
-                with open(audit_file, 'w') as f:
-                    json.dump(audit_data, f, indent=2)
+                    "prompt": prompt,
+                    "raw_response": response.text
+                }
+                with open(os.path.join(DATA_DIR, 'last_gen.json'), 'w') as f:
+                    json.dump(debug_dump, f, indent=2)
             except Exception as e:
-                print(f"[AUDIT ERROR] Could not save token audit: {e}")
+                print(f"[DEBUG ERROR] Could not dump last_gen: {e}")
 
-        #----------------------------#
-        #         /DEBUGGING         #
-        #----------------------------#
+            #save token inputs and outputs alongside a timestamp to get an overview of token usage.
+            if response.usage_metadata:
+                input_tokens = response.usage_metadata.prompt_token_count
+                output_tokens = response.usage_metadata.candidates_token_count
+                total_tokens = response.usage_metadata.total_token_count
+                print(f"[PROMPT INPUT TOKENS] - {input_tokens} | [RESPONSE OUTPUT TOKENS] - {output_tokens} | [TOTAL TOKEN USAGE] - {total_tokens}")
+                print(f"[TOKEN AUDIT] % of Minute Limit: {(input_tokens / 1000000) * 100:.4f}%") # based on 1M TPM limit
 
-        return clean_json_response(response.text) #parse JSON string to Python dict
-    
-    except Exception as e:
-        #log the actual error to the backend console for debugging
-        print(f"[AI CRITICAL ERROR] Generation failed: {e}")
-        traceback.print_exc()
+                try:
+                    audit_file = os.path.join(DATA_DIR, 'token_audit.json')
+                    audit_data = []
+                    #read existing audit log if it exists
+                    if os.path.exists(audit_file):
+                        with open(audit_file, 'r') as f:
+                            try:
+                                audit_data = json.load(f)
+                            except json.JSONDecodeError:
+                                audit_data = [] #start fresh if corrupted
+                    
+                    #append the new entity
+                    audit_data.append({
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "input": input_tokens,
+                        "output": output_tokens,
+                        "total": total_tokens,
+                        "world": worlds[game_room.world_id].name,
+                        "player_count": len(game_room.players),
+                        "ai_model": game_room.ai_model
+                    })
+                    
+                    #write back to file
+                    with open(audit_file, 'w') as f:
+                        json.dump(audit_data, f, indent=2)
+                except Exception as e:
+                    print(f"[AUDIT ERROR] Could not save token audit: {e}")
+
+            return clean_json_response(response.text) #parse JSON string to Python dict
         
-        #return a safe, thematic message to the frontend without raw error codes
-        return {
-            "story_text": "GAOL has gone silent", 
-            "updates": {}, 
-            "world_updates": []
-        }
+        except errors.APIError as e:
+            if e.code == 503:
+                print(f"[AI ERROR] Model {game_room.ai_model} is currently overloaded. Waiting and retrying...")
+                time.sleep(5)
+                tries += 1 #increase the tries counter so we don't infinitely retry
+
+        except Exception as e:
+            #log the actual error to the backend console for debugging
+            print(f"[AI ERROR] Generation failed: {e}")
+            traceback.print_exc()
+            
+            #return a thematic message for failures.
+            return {
+                "story_text": "GAOL has gone silent", 
+                "updates": {}, 
+                "world_updates": []
+            }
 
 #helper function to process AI updates
 def apply_ai_updates(game, ai_data, room_id):
-    updates = ai_data.get('updates', {})
-    world_updates  = ai_data.get('world_updates', [])
-    new_entities   = ai_data.get('new_entities', [])
-    new_locations  = ai_data.get('new_locations', [])
-    location_updates = ai_data.get('location_updates', {}) #get updates for existing locations
-    new_characters = ai_data.get('new_characters', [])
-    
+    updates          = ai_data.get('updates', {})            #player party updates
+    world_updates    = ai_data.get('world_updates', [])      #newly added world history
+    location_updates = ai_data.get('location_updates', {})   #get updates for existing locations
+    new_entities     = ai_data.get('new_group', [])          #newly created entitites (factions)
+    new_locations    = ai_data.get('new_locations', [])      #newly created locations
+    new_characters   = ai_data.get('new_characters', [])     #newly created characters
+    new_biology      = ai_data.get('new_biology', [])        #newly created flora and fauna
+
+    #NOTE - new_entities is used here while new_group is used and returned in the response. This is to help the AI clarify groups versus the generic word "entity"
+    #it was having a problem where it would use entities as a catch-all for lore elements.
+
     #debugging, sese if entites are being recognized
     print(f"[DEBUG] Processing updates for Room {room_id}. Entities: {len(new_entities)} | Locations: {len(new_locations)}")
 
@@ -683,6 +698,26 @@ def apply_ai_updates(game, ai_data, room_id):
                 )
                 print(f"[LORE] Created Location: {loc.get('name')} at {loc.get('x')},{loc.get('y')}")
 
+            #add new characters
+            for char in new_characters:
+                world.add_character(
+                    char.get('name', 'Unknown'),
+                    char.get('description', ''),
+                    char.get('role', 'NPC'),
+                    char.get('affiliation', 'None')
+                )
+                print(f"[LORE] Created NPC: {char.get('name')}")
+        
+            #add new flora/fauna
+            for bio in new_biology:
+                world.add_biology(
+                    bio.get('name', 'Unknown'),
+                    bio.get('description', ''),
+                    bio.get('habitat', ''),
+                    bio.get('disposition', '')
+                )
+                print(f"[LORE] Created Biology: {bio.get('name')}")
+
             #process location updates (changing affiliation, description)
             for loc_name, changes in location_updates.items():
                 #find location by name
@@ -695,16 +730,6 @@ def apply_ai_updates(game, ai_data, room_id):
                     if 'radius' in changes:
                         target_loc.radius = changes['radius']
                     print(f"[LORE] Updated Location: {target_loc.name}")
-
-            #add new characters
-            for char in new_characters:
-                world.add_character(
-                    char.get('name', 'Unknown'),
-                    char.get('description', ''),
-                    char.get('role', 'NPC'),
-                    char.get('affiliation', 'None')
-                )
-                print(f"[LORE] Created NPC: {char.get('name')}")
             
             save_worlds() #save worlds with all the updated/existing lore
             emit('world_update', world.to_dict(), room=room_id)
