@@ -686,14 +686,15 @@ function App() {
   //FACTIONS
   //grabs factions from the worlds.json sheet
   const getFactions = () => {
-      if(!worldData || !worldData.entities) return [];
-      //filter out things that are individual titles
-      //FIXME: This is legacy and should be removed
-      const individualTypes = ['god', 'deity', 'npc', 'character', 'person'];
-      return worldData.entities.filter(e => 
-          (e.type.toLowerCase().includes('faction') || e.type.toLowerCase().includes('guild') || e.type.toLowerCase().includes('group'))
-          && !individualTypes.some(t => e.type.toLowerCase().includes(t))
-      );
+      if(!worldData) return [];
+      return worldData.entities || [];
+  };
+
+  //BIOLOGY
+  //grabs biology from the worlds.json sheet
+  const getBiology = () => {
+      if(!worldData) return [];
+      return worldData.biology || [];
   };
 
   //LOCATIONS
@@ -1316,9 +1317,6 @@ function App() {
                                 (Territory Uncharted)
                             </div>
                         </div>
-                        <div className="world-desc">
-                            {worldData.description}
-                        </div>
                         
                         {/* World Sub-Tabs */}
                         <div className="sub-tab-bar">
@@ -1326,6 +1324,7 @@ function App() {
                             <button className={`sub-tab-btn ${worldTab === 'locations' ? 'active' : ''}`} onClick={()=>setWorldTab('locations')}>LOCATIONS</button>
                             <button className={`sub-tab-btn ${worldTab === 'figures' ? 'active' : ''}`} onClick={()=>setWorldTab('figures')}>FIGURES</button>
                             <button className={`sub-tab-btn ${worldTab === 'factions' ? 'active' : ''}`} onClick={()=>setWorldTab('factions')}>FACTIONS</button>
+                            <button className={`sub-tab-btn ${worldTab === 'biology' ? 'active' : ''}`} onClick={()=>setWorldTab('biology')}>BIOLOGY</button>
                         </div>
 
                         {/* scrollable list of content based on tab */}
@@ -1380,6 +1379,19 @@ function App() {
                                         </div>
                                     ))
                                 ) : <div style={{color:'#555'}}>No major factions known.</div>
+                            )}
+
+                            {worldTab === 'biology' && (
+                                getBiology().length > 0 ? (
+                                    getBiology().map((e, i) => (
+                                        <div key={i} className="entity-item">
+                                            <div className="entity-name">{e.name}</div>
+                                            {e.disposition && <div style={{fontSize: '0.8rem', color: '#aaac2d', marginTop:'5px'}}>Disposition: {e.disposition}</div>}
+                                            <div className="entity-desc">{e.description}</div>
+                                            <div className="entity-type">Habitat: {e.habitat}</div>
+                                        </div>
+                                    ))
+                                ) : <div style={{color:'#555'}}>No known biology.</div>
                             )}
                         </div>
                      </>
