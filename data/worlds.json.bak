@@ -88,13 +88,13 @@
         "name": "Elfbirds",
         "description": "Birds native to the Elven city of Elfsville.",
         "habitat": "Elfsville",
-        "disposition": "Unknown"
+        "disposition": "Coexistent"
       },
       {
         "name": "Elffrogs",
         "description": "Frogs native to the Elven city of Elfsville.",
         "habitat": "Elfsville",
-        "disposition": "Unknown"
+        "disposition": "Coexistent"
       }
     ]
   }

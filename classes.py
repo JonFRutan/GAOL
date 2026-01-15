@@ -4,9 +4,6 @@ import random, string, os
 from google         import genai
 from dotenv         import load_dotenv
 
-
-
-
 #generic class for locations, cities, landmarks, etc.
 class WorldEntity:
     def __init__(self, name, type_tag, description, keywords=[]):
@@ -77,7 +74,7 @@ class World:
         self.realism = realism                                                           #how realistic should the world behave? (High, Mid, Low) determines how wacky the world should behave
         self.description = description                                                   #description of the planet (THIS DOESN'T POPULATE OR DO ANYTHING AT THE MOMENT)
         self.major_events = []                                                           #a list of major world events that should remain persistent across playthroughs. (e.g. volcano covering planet with ash)
-        self.entities = []                                                               #list of WorldEntity objects (Abstract concepts: Factions, Gods)
+        self.groups = []                                                                 #list of WorldEntity objects (Abstract concepts: Factions, Gods)
         self.characters = []                                                             #list of characters within the world
         self.locations = []                                                              #list of Location objects (Physical places with coordinates)
         self.biology = []                                                                #list of Biology that lives within the world
@@ -95,18 +92,18 @@ class World:
             self.major_events.pop(0)
         
     #adding a new entity to the world.
-    def add_entity(self, name, type_tag, description, keywords=[]):
+    def add_group(self, name, type_tag, description, keywords=[]):
         #safety check for keywords
         if not isinstance(keywords, list):
             keywords = []
             
         #no duplicates
-        if any(e.name.lower() == name.lower() for e in self.entities):
+        if any(e.name.lower() == name.lower() for e in self.groups):
             print(f"[LORE SKIP] Duplicate entity detected: {name}")
             return
             
         new_entity = WorldEntity(name, type_tag, description, keywords)
-        self.entities.append(new_entity)
+        self.groups.append(new_entity)
         print(f"[DEBUG] Entity Added to Memory: {name} ({type_tag})")
 
     #adding a new physical location to the world
@@ -145,7 +142,7 @@ class World:
             'width': self.width,
             'height': self.height,
             'major_events': self.major_events,
-            'entities': [e.to_dict() for e in self.entities],
+            'groups': [e.to_dict() for e in self.groups],
             'characters': [c.to_dict() for c in self.characters],
             'locations': [l.to_dict() for l in self.locations],
             'biology' : [b.to_dict() for b in self.biology]
@@ -181,6 +178,7 @@ class Player:
     def __repr__(self):
         return f"{self.username} [HP:{self.hp}] ({self.status})"
     
+    #turn player into a dictionary, currently called by "save_players"
     def to_dict(self):
         return {
             'username': self.username,
@@ -242,7 +240,7 @@ class GameRoom:
         if custom_api_key:
             self.ai_client =  genai.Client(api_key=custom_api_key)
         elif DEFAULT_API_KEY:
-            self.ai_client = genai.Client(api_key=custom_api_key)
+            self.ai_client = genai.Client(api_key=DEFAULT_API_KEY)
         else:
             self.ai_client = None
 
@@ -301,6 +299,7 @@ class GameRoom:
                 status_lines.append(f"   - SECRET (Only known to you and player): {p.secret}")
         return "\n".join(status_lines)
     
+    #turn the game room into a dictionary
     def to_dict(self):
         player_list = [p.username for p in self.players.values()]
         return {

@@ -655,7 +655,8 @@ function App() {
                   name: c.name,
                   title: c.role || "Character",
                   desc: c.description,
-                  aff: c.affiliation
+                  aff: c.affiliation,
+                  status: c.status
               });
           });
       }
@@ -1268,7 +1269,7 @@ function App() {
                                     disabled={!isOwnSheet || (isOwnSheet && isLockedIn)} 
                                 />
                             </div>
-                            <div style={{flexGrow: 1, display:'flex', flexDirection:'column', marginBottom:'10px'}}>
+                            <div style={{flexGrow: 1, display:'flex', flexDirection:'column'}}>
                                 <label style={{fontSize:'0.7rem', color:'#666'}}>SECRET</label>
                                 {/* secrets are hidden for other players */}
                                 {isOwnSheet ? (
@@ -1292,9 +1293,7 @@ function App() {
                                         CONFIRM & READY
                                     </button>
                                 ) : (
-                                    <div style={{textAlign:'center', color:'var(--terminal-green)', border:'1px solid var(--terminal-green)', padding:'5px', fontSize:'0.8rem', fontWeight:'bold'}}>
-                                        LOCKED IN
-                                    </div>
+                                    <></>
                                 )
                             )}
                         </div>
