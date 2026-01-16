@@ -1,4 +1,15 @@
 #jfr
+
+#FIXME
+#1. Figure statuses aren't seeming to be updated 
+#2. Factions don't seem to be appearing, check out the GAOL server files
+
+#ADDME
+#1. Highlight player names in the GAOL response.
+#2. Color picker for each player, which is what will highlight their name.
+#3. End Game button that will cause a final story resolution.
+#4. Acknowledge when players are dead, or have a strict "campaign mode" where players can't be as silly.
+
 print("------------------------------ GAOL v1.6 ------------------------------")
 import                     os, json, time, re, traceback
 from google         import genai
