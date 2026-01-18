@@ -242,15 +242,14 @@ button {
     font-size: 0.8rem;
     color: #aaa;
     font-style: italic;
-    line-height: 1.3;
-    max-height: 80px;
+    max-height: 250px;
     overflow-y: auto;
-    white-space: pre-wrap;
     scrollbar-width: thin;
 }
 
-.world-card-desc::-webkit-scrollbar { width: 4px; }
-.world-card-desc::-webkit-scrollbar-thumb { background: var(--accent-dim); }
+.world-events-desc::-webkit-scrollbar-thumb { background: #333 !important; }
+.world-events-desc::-webkit-scrollbar-track { background: #000 !important; }
+
 .footer-btn {
     background: transparent;
     border: none;
@@ -387,7 +386,6 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
 }
 
 .nav-btn {
@@ -415,7 +413,6 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
 .nav-btn.leave-btn {
     color: var(--alert-red);
     border-color: #330000;
-    font-size: 0.6rem;
 }
 
 .nav-btn.leave-btn:hover {
@@ -426,14 +423,11 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
 .nav-btn.ttsmod-btn {
     color: var(--terminal-green);
     border-color: var(--terminal-green);
-    font-size: 0.6rem;
 }
 
 /* AI Model Button */
 .nav-btn.model-btn {
     color: #b080ff;
-    border-color: #3a2a55;
-    font-size: 0.6rem;
 }
 
 .nav-btn.model-btn:hover {
@@ -445,8 +439,6 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
 /* api key button*/
 .nav-btn.key-btn {
     color: var(--tech-cyan);
-    border-color: #004d55;
-    font-size: 0.6rem;
 }
 
 .nav-btn.key-btn:hover {
@@ -458,8 +450,6 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
 /* god mode button */
 .nav-btn.god-mode-btn {
     color: var(--accent-gold);
-    border-color: var(--accent-dim);
-    font-size: 0.6rem; 
 }
 
 .nav-btn.god-mode-btn:hover {
@@ -492,12 +482,10 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
 }
 
 .model-option-btn:hover {
-    border-color: #b080ff;
     color: #b080ff;
 }
 
 .model-option-btn.active {
-    border-color: #b080ff;
     background: rgba(176, 128, 255, 0.1);
     color: #fff;
 }

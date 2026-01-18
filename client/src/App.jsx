@@ -37,6 +37,7 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false); 
   const [isReady, setIsReady] = useState(false); 
   const [isEmbarking, setIsEmbarking] = useState(false); //track if launch animation started
+  const [isFinale, setIsFinale] = useState(false);
   //tracks which character sheet is currently being viewed
   const [selectedPlayer, setSelectedPlayer] = useState(null); 
   //character sheet form states
@@ -60,7 +61,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [partyStats, setPartyStats] = useState([]);
   const [inputValue, setInputValue] = useState('');
-  const [statusMsg, setStatusMsg] = useState('System Ready...');
+  const [statusMsg, setStatusMsg] = useState('GAOL has arrived...');
   //visual state for the d20 roll
   const [lastRoll, setLastRoll] = useState(null);
   //admin override state
@@ -288,6 +289,7 @@ function App() {
       setJoinPassword(''); // clear password on success
       setShowPwdModal(false);
       setIsEmbarking(false); // reset embark state
+      setIsFinale(false);
       setShowOverrideModal(false); // reset override state
       
       localStorage.setItem('gaol_session', JSON.stringify({ username: data.username, room: data.room }));
@@ -313,6 +315,7 @@ function App() {
         setIsAdmin(false);
         setStatusMsg(data.msg);
         setIsEmbarking(false);
+        setIsFinale(false);
         localStorage.removeItem('gaol_session'); //clear session
     });
     //handle admin status update (transfer)
@@ -495,6 +498,7 @@ function App() {
   //          INGAME HANDLERS         //
   //////////////////////////////////////
 
+
   //trigger for admin to start the game loop
   const handleEmbark = (e) => {
     setIsEmbarking(true); // Hide the button immediately
@@ -540,6 +544,13 @@ function App() {
       localStorage.removeItem('gaol_session'); // clear session explicitly
   };
 
+  //handle game finale
+  const handleFinale = () => {
+    setIsFinale(true);
+    socket.emit('finale', { room });
+    //setIsReady(false);
+  }
+
   //submits character sheet data to the server
   //emission triggered by app.py : handle_player_ready
   const handleReady = () => {
@@ -561,9 +572,13 @@ function App() {
       });
   };
 
+
   //User Submits Action (hits enter from input box)
   //sends player chat/action to server and rolls a client-side die
   const sendAction = () => {
+    if(isFinale) {
+        return;
+    }
     if (inputValue.trim()) {
       const roll = Math.floor(Math.random() * 20) + 1; //generates a number between 1-20
       //FIXME: Perhaps in the future we should add die modifiers like DnD? Things like advantage or bonuses.
@@ -612,7 +627,7 @@ function App() {
       setShowKickModal(true);
   };
   //pop-up to confirm the kicking
-  //FIXME: this uses the stupid default browser pop up
+  //FIXME: this uses the default browser pop up, ugly
   const confirmKick = () => {
        socket.emit('kick_player', { room, target_name: kickTarget });
        setShowKickModal(false);
@@ -688,7 +703,7 @@ function App() {
   //grabs factions from the worlds.json sheet
   const getFactions = () => {
       if(!worldData) return [];
-      return worldData.entities || [];
+      return worldData.groups || [];
   };
 
   //BIOLOGY
@@ -1097,6 +1112,10 @@ function App() {
                  GOD
               </button>
           )}
+          {/* End Game Button - starts finale sequence*/}
+            <button className={`nav-btn`} onClick={handleFinale} title="End Game">
+                End Game 
+            </button>
       </div>
 
       {/* Left side: Chat, Input, Dice */}
@@ -1151,9 +1170,9 @@ function App() {
             value={inputValue} 
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendAction()}
-            placeholder="Describe your action..."
+            placeholder={!isFinale ? "Describe your action..." : "Campaign has ended."}
             /* filter out system messages so model changes don't enable chat too early */
-            disabled={nonSystemMessages.length === 0} 
+            disabled={nonSystemMessages.length === 0 || isFinale} 
           />
           {/* Dice - Eventually we'll have frames to animate this rolling process */}
           <div className="dice-display">
