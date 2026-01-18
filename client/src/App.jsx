@@ -61,7 +61,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [partyStats, setPartyStats] = useState([]);
   const [inputValue, setInputValue] = useState('');
-  const [statusMsg, setStatusMsg] = useState('GAOL has arrived...');
+  const [statusMsg, setStatusMsg] = useState('');
   //visual state for the d20 roll
   const [lastRoll, setLastRoll] = useState(null);
   //admin override state
