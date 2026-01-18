@@ -966,7 +966,7 @@ function App() {
                         <p>GAOL is a multiplayer AI storyteller experience.</p>
                         <p>Inspired by <i>AI Dungeon</i> and <i>Death by AI</i>, I sought to recreate the multiplayer experience with a rich, evolving world.</p>
                         <p>Create a room, define your setting, and embark on a collaborative storytelling journey with friends.</p>
-                        <p><a href="[https://github.com/JonFRutan/GAOL](https://github.com/JonFRutan/GAOL)">GitHub</a> || <a href="[https://www.linkedin.com/in/jonathanrutan/](https://www.linkedin.com/in/jonathanrutan/)">LinkedIn</a> || <a href="[https://jfelix.space](https://jfelix.space)">jfelix</a></p>
+                        <p><a href="https://github.com/JonFRutan/GAOL">GitHub</a> || <a href="https://www.linkedin.com/in/jonathanrutan/">LinkedIn</a> || <a href="https://jfelix.space">jfelix</a></p>
                       </div>
                       <button className="join-sm-btn" style={{width: '100%', marginTop: '20px'}} onClick={() => setShowAbout(false)}>CLOSE</button>
                  </div>
