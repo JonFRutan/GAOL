@@ -236,6 +236,7 @@ class GameRoom:
         self.is_started = False                 #has the room started the gameplay loop yet?
         self.admin_sid = None                   #track who the host is
         self.dm_override = None                 #stores admin override instructions for next turn
+        self.is_finished = False                #becomes true once game has finalized.
 
         if custom_api_key:
             self.ai_client =  genai.Client(api_key=custom_api_key)

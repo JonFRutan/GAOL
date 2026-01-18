@@ -576,6 +576,9 @@ function App() {
   //User Submits Action (hits enter from input box)
   //sends player chat/action to server and rolls a client-side die
   const sendAction = () => {
+    if(isFinale) {
+        return;
+    }
     if (inputValue.trim()) {
       const roll = Math.floor(Math.random() * 20) + 1; //generates a number between 1-20
       //FIXME: Perhaps in the future we should add die modifiers like DnD? Things like advantage or bonuses.
@@ -1167,9 +1170,9 @@ function App() {
             value={inputValue} 
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendAction()}
-            placeholder="Describe your action..."
+            placeholder={!isFinale ? "Describe your action..." : "Campaign has ended."}
             /* filter out system messages so model changes don't enable chat too early */
-            disabled={nonSystemMessages.length === 0} 
+            disabled={nonSystemMessages.length === 0 || isFinale} 
           />
           {/* Dice - Eventually we'll have frames to animate this rolling process */}
           <div className="dice-display">

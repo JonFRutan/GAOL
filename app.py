@@ -1221,16 +1221,19 @@ def handle_rejoin(data):
 def handle_player_ready(data):
     #room stuff
     room = data['room']
+    if room not in games: return
+    game = games[room]
     sid = request.sid
-    
+    if game.is_finished:
+        print(f"[DEBUG] Finished game ({game.room_id}) had attempted player submission by {sid}")
+        return
+
     #inputs
     description = data.get('description', '')
     tags = data.get('tags', [])
     ambition = data.get('ambition', 'Unknown')
     secret = data.get('secret', '')
     
-    if room not in games: return
-    game = games[room]
     player = game.players.get(sid)
     
     if player:
@@ -1299,6 +1302,7 @@ def handle_finale(data):
         } 
         for p in game.players.values()
     ]
+    game.is_finished = True
     emit('game_state_update', game_state_export, room=room)
     print(f"[ROOM] Finalized {game.room_id}.")
 
