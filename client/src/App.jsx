@@ -109,6 +109,9 @@ function App() {
   });
   const [sam, setSam] = useState(null);
 
+  //debug stuff
+  //since scoping will limit access to certain variables
+  window.partyStats = partyStats; //allows me to see party stats within the console
 
 
   //helper function that plays text with the users defined configurations
@@ -655,17 +658,27 @@ function App() {
   //check to see if everyone is ready so embark button can be enabled
   const allPlayersReady = partyStats.length > 0 && partyStats.every(p => p.is_ready);
   
-  //handles messages sent up from server
+  //preprocessing on messages sent back from the server.
+  //Currently uses regex to highlight player names, for visual flavor
   const handleMessages = (data) => {
-    console.log(data)
-    if (data.sender == "GAOL") {
-        const storyText = data.text.split(' ');
-        for (const word in storyText) {
-            
-        }
-    } else {
-    setMessages((prev) => [...prev, data])
-    }
+    let messageText = data.text;
+    //escape regex so we can properly match names like "Mr. Bill" with special characters
+    const escapeRegex = (string) => {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
+    let playerPattern = "";
+    //places all player names delimited by pipes '|'
+    partyStats.forEach((player) => {playerPattern += escapeRegex(player.name); playerPattern += "|"});
+    //remove last unnecessary pipe
+    playerPattern = playerPattern.slice(0,-1);
+    const playerRegex = new RegExp(`\\b(${playerPattern})\\b`, 'gi');
+    //our new message text will remain the same, but uses the regex 'replace' with our new player regex.
+    //we replace instances of player names with in-line spans to apply a highlighting to the name.
+    //we use span instead of div because div would force line breaks and odd formatting.
+    const newText = messageText.replace(playerRegex, '<span class="highlighted-name">$1</span>');
+    //replace the messages text with out formatted text.
+    const newMessage = {...data, text: newText};
+    setMessages((prev) => [...prev, newMessage]);
   };
 
   //World Sheet Filters
@@ -1170,7 +1183,7 @@ function App() {
               </div>
               <div id="msg-body" className="msg-body" style={{color: m.sender === 'System' ? '#555' : 'inherit', fontStyle: m.sender === 'System' ? 'italic' : 'normal'}}>
                 {m.sender !== 'GAOL' && m.sender !== 'System' && <span className="player-name">{m.sender}<br></br></span>}
-                {m.text}
+                <span dangerouslySetInnerHTML={{__html: m.text}} />
               </div>
             </div>
           ))}
