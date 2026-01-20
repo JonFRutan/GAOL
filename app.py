@@ -5,11 +5,12 @@
 
 #ADDME
 #1. Highlight player names in the GAOL response.
-#2. Color picker for each player, which is what will highlight their name.
-#3. End Game button that will cause a final story resolution.
-#4. Acknowledge when players are dead, or have a strict "campaign mode" where players can't be as silly.
+#2. Save-state for games so people can pick back up their campaign.
+#3. Color picker for each player, which is what will highlight their name.
+#4. Campaign World
+#5. Personal Worlds
 
-print("------------------------------ GAOL v1.6 ------------------------------")
+print("------------------------------ GAOL v1.7 ------------------------------")
 import                     os, json, time, re, traceback
 from google         import genai
 from flask_cors     import CORS
@@ -99,11 +100,14 @@ generation_config = types.GenerateContentConfig(
       "location_updates": {{
           "Iron Keep": {{ "affiliation": "The Rebellion", "description": "A fortress city once controlled by the Iron Legion. Now under rebel control." }}
       }},
-      "group_update": {{
+      "character_update": {{
           "Garrick": {{"status": "Captured", "description": "Former general of the Iron Legion Army, now imprisoned by rebels." }}
       }},
       "biology_updates": {{
           "Tarcrab": {{"description": "Extinct: Large, pitch-black crabs who slowly move through tar, known for hunting people.", "habitat" : "None", "disposition": "None - Extinct"}}
+      }},
+      "group_updates": {{
+          "Grant's Rebellion": {{"description": "Large, clandestine rebellion led by General Grant. Now in control of the Iron Keep.", "keywords": ["rebellion", "Iron Keep", "secretive", "clandestine"] }}
       }},
       "new_group": [
           {{ "name": "The Iron Legion", "type": "Faction", "description": "A mercenary army.", "keywords": ["war", "mercenary", "iron"] }}
@@ -491,13 +495,36 @@ def save_all_data():
 
 #clean markdown formatting from JSON responses (in case the AI uses it or it bleeds in)
 #you may have seen this happen if you try to get an AI model to format some markdown files.
-def clean_json_response(text):
-    clean_text = text.strip()
-    if "```json" in clean_text:
-        clean_text = clean_text.replace("```json", "").replace("```", "")
-    elif "```" in clean_text:
-        clean_text = clean_text.replace("```", "")
-    return json.loads(clean_text)
+def process_response(text, players):
+    #remove markdown from JSON response
+    if "```json" in text:
+        text = text.replace("```json", "").replace("```", "")
+    elif "```" in text:
+        text = text.replace("```", "")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        #if JSON fails to load, use a regex to attempt a fix.
+        #this tends to happen with illegal escape characters, I only ran into this issue once
+        #but want to prevent it from happening again
+        print("[SYSTEM] JSON Error detected. Attempting Regex patch...")
+        try:
+            text = re.sub(r'\\(?![\\"/bfnrtu])', r'\\\\', text)
+            return json.loads(text)
+        except Exception as e:
+            print(f"[CRITICAL AI ERROR] Could not patch JSON: {e}")
+            print(f"[BAD JSON CONTENT] {text}")
+            return {
+                "story_text": "The threads of fate are tangled.", 
+                "updates": {}, 
+                "world_updates": []
+            }
+    if players:
+        player_names = [re.escape(p.username) for p in players] #grab all palyer names
+        replace_reg = r"\b(" + "|".join(player_names) + r")\b"
+        if "story_text" in data:
+            data["story_text"] = re.sub(replace_reg, r'<span class="highlighted-name">\1</span>', data["story_text"], flags=re.IGNORECASE)
+        return data
 
 #this is the function responsible for collating all the prompt information, assembling it, and generating response.
 #this response contains the visually displayed story text, alongside all the world/character updates that must be made.
@@ -661,7 +688,8 @@ def generate_ai_response(game_room, is_embark=False, is_finale=False):
                 except Exception as e:
                     print(f"[AUDIT ERROR] Could not save token audit: {e}")
 
-            return clean_json_response(response.text) #parse JSON string to Python dict
+            final_output = process_response(response.text, game_room.players.values()) #parse JSON string to Python dict
+            return final_output
         
         except errors.APIError as e:
             tries += 1 #increase the tries counter so we don't infinitely retry
@@ -691,13 +719,14 @@ def generate_ai_response(game_room, is_embark=False, is_finale=False):
 
 #helper function to process AI updates
 def apply_ai_updates(game, ai_data, room_id):
-    updates          = ai_data.get('updates', {})            #player party updates
-    world_updates    = ai_data.get('world_updates', [])      #newly added world history
-    location_updates = ai_data.get('location_updates', {})   #get updates for existing locations
-    new_group        = ai_data.get('new_group', [])          #newly created entitites (factions)
-    new_locations    = ai_data.get('new_locations', [])      #newly created locations
-    new_characters   = ai_data.get('new_characters', [])     #newly created characters
-    new_biology      = ai_data.get('new_biology', [])        #newly created flora and fauna
+    updates             = ai_data.get('updates', {})            #player party updates
+    world_updates       = ai_data.get('world_updates', [])      #newly added world history
+    location_updates    = ai_data.get('location_updates', {})   #get updates for existing locations
+    character_updates   = ai_data.get('character_updates', {})  #update characters
+    new_group           = ai_data.get('new_group', [])          #newly created entitites (factions)
+    new_locations       = ai_data.get('new_locations', [])      #newly created locations
+    new_characters      = ai_data.get('new_characters', [])     #newly created characters
+    new_biology         = ai_data.get('new_biology', [])        #newly created flora and fauna
 
     #debugging, sese if entites are being recognized
     print(f"[DEBUG] Processing updates for Room {room_id}. Entities: {len(new_group)} | Locations: {len(new_locations)}")
@@ -767,6 +796,15 @@ def apply_ai_updates(game, ai_data, room_id):
                     if 'radius' in changes:
                         target_loc.radius = changes['radius']
                     print(f"[LORE] Updated Location: {target_loc.name}")
+            
+            for char_name, changes in character_updates.items():
+                #get character by name
+                target_character = next((c for c in world.characters if c.name.lower() == char_name.lower()), None)
+                if target_character:
+                    if 'status' in changes:
+                        target_character.status = changes['status']
+                    if 'description' in changes:
+                        target_character.description = changes['description']
             
             save_worlds() #save worlds with all the updated/existing lore
             emit('world_update', world.to_dict(), room=room_id)
@@ -1274,8 +1312,14 @@ def handle_player_ready(data):
 def handle_finale(data):
     room = data['room']
     game = games[room]
+    sid = request.sid
     print(f"[ROOMS] Room {game.room_id} entering finale.")
     if room not in games:
+        return
+    
+    #make sure the player submitting the finale is the admin.
+    if game.admin_sid != sid:
+        emit('status', {'msg': 'UNAUTHORIZED.'}, room=sid)
         return
     
     emit('status', {'msg': 'FINALIZING CAMPAIGN...'}, room=room)

@@ -458,6 +458,11 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
     box-shadow: 0 0 10px var(--accent-dim);
 }
 
+/* End game button */
+.nav-btn.end-game-btn {
+    color: #505799;
+}
+
 .model-list {
     display: flex;
     flex-direction: column;
@@ -690,6 +695,10 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
 .msg-body {
   white-space: pre-wrap;
   word-wrap: break-word;
+}
+
+.highlighted-name {
+    color: var(--accent-gold);
 }
 
 .input-area {

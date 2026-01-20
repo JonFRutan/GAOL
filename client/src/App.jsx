@@ -109,6 +109,9 @@ function App() {
   });
   const [sam, setSam] = useState(null);
 
+  //debug stuff
+  //since scoping will limit access to certain variables
+  window.partyStats = partyStats; //allows me to see party stats within the console
 
 
   //helper function that plays text with the users defined configurations
@@ -298,7 +301,7 @@ function App() {
     
     //INGAME VIEW SOCKETS
     //listens for incoming chat messages
-    socket.on('message', (data) => setMessages((prev) => [...prev, data]));
+    socket.on('message', (data) => handleMessages(data));
     //updates the top status ticker
     socket.on('status', (data) => setStatusMsg(data.msg));
     //updates the list of players and their stats
@@ -551,6 +554,7 @@ function App() {
     //setIsReady(false);
   }
 
+
   //submits character sheet data to the server
   //emission triggered by app.py : handle_player_ready
   const handleReady = () => {
@@ -654,6 +658,12 @@ function App() {
   //check to see if everyone is ready so embark button can be enabled
   const allPlayersReady = partyStats.length > 0 && partyStats.every(p => p.is_ready);
   
+  //preprocessing on messages sent back from the server.
+  //Currently uses regex to highlight player names, for visual flavor
+  const handleMessages = (data) => {
+    setMessages((prev) => [...prev, data]);
+  };
+
   //World Sheet Filters
 
   //FIGURES
@@ -1154,9 +1164,9 @@ function App() {
               <div className="msg-header">
                 {m.sender === 'GAOL' ? 'GAOL:' : (m.sender === 'System' ? 'SYS:' : 'Actions:')}
               </div>
-              <div className="msg-body" style={{color: m.sender === 'System' ? '#555' : 'inherit', fontStyle: m.sender === 'System' ? 'italic' : 'normal'}}>
+              <div id="msg-body" className="msg-body" style={{color: m.sender === 'System' ? '#555' : 'inherit', fontStyle: m.sender === 'System' ? 'italic' : 'normal'}}>
                 {m.sender !== 'GAOL' && m.sender !== 'System' && <span className="player-name">{m.sender}<br></br></span>}
-                {m.text}
+                <span dangerouslySetInnerHTML={{__html: m.text}} />
               </div>
             </div>
           ))}
