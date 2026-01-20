@@ -661,24 +661,7 @@ function App() {
   //preprocessing on messages sent back from the server.
   //Currently uses regex to highlight player names, for visual flavor
   const handleMessages = (data) => {
-    let messageText = data.text;
-    //escape regex so we can properly match names like "Mr. Bill" with special characters
-    const escapeRegex = (string) => {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    };
-    let playerPattern = "";
-    //places all player names delimited by pipes '|'
-    partyStats.forEach((player) => {playerPattern += escapeRegex(player.name); playerPattern += "|"});
-    //remove last unnecessary pipe
-    playerPattern = playerPattern.slice(0,-1);
-    const playerRegex = new RegExp(`\\b(${playerPattern})\\b`, 'gi');
-    //our new message text will remain the same, but uses the regex 'replace' with our new player regex.
-    //we replace instances of player names with in-line spans to apply a highlighting to the name.
-    //we use span instead of div because div would force line breaks and odd formatting.
-    const newText = messageText.replace(playerRegex, '<span class="highlighted-name">$1</span>');
-    //replace the messages text with out formatted text.
-    const newMessage = {...data, text: newText};
-    setMessages((prev) => [...prev, newMessage]);
+    setMessages((prev) => [...prev, data]);
   };
 
   //World Sheet Filters

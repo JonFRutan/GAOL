@@ -495,32 +495,36 @@ def save_all_data():
 
 #clean markdown formatting from JSON responses (in case the AI uses it or it bleeds in)
 #you may have seen this happen if you try to get an AI model to format some markdown files.
-def clean_json_response(text):
-    clean_text = text.strip()
+def process_response(text, players):
     #remove markdown from JSON response
-    if "```json" in clean_text:
-        clean_text = clean_text.replace("```json", "").replace("```", "")
-    elif "```" in clean_text:
-        clean_text = clean_text.replace("```", "")
-    #attempt load
+    if "```json" in text:
+        text = text.replace("```json", "").replace("```", "")
+    elif "```" in text:
+        text = text.replace("```", "")
     try:
-        return json.loads(clean_text)
+        data = json.loads(text)
     except json.JSONDecodeError:
         #if JSON fails to load, use a regex to attempt a fix.
         #this tends to happen with illegal escape characters, I only ran into this issue once
         #but want to prevent it from happening again
         print("[SYSTEM] JSON Error detected. Attempting Regex patch...")
         try:
-            clean_text = re.sub(r'\\(?![\\"/bfnrtu])', r'\\\\', clean_text)
-            return json.loads(clean_text)
+            text = re.sub(r'\\(?![\\"/bfnrtu])', r'\\\\', text)
+            return json.loads(text)
         except Exception as e:
             print(f"[CRITICAL AI ERROR] Could not patch JSON: {e}")
-            print(f"[BAD JSON CONTENT] {clean_text}")
+            print(f"[BAD JSON CONTENT] {text}")
             return {
                 "story_text": "The threads of fate are tangled.", 
                 "updates": {}, 
                 "world_updates": []
             }
+    if players:
+        player_names = [re.escape(p.username) for p in players] #grab all palyer names
+        replace_reg = r"\b(" + "|".join(player_names) + r")\b"
+        if "story_text" in data:
+            data["story_text"] = re.sub(replace_reg, r'<span class="highlighted-name">\1</span>', data["story_text"], flags=re.IGNORECASE)
+        return data
 
 #this is the function responsible for collating all the prompt information, assembling it, and generating response.
 #this response contains the visually displayed story text, alongside all the world/character updates that must be made.
@@ -684,7 +688,7 @@ def generate_ai_response(game_room, is_embark=False, is_finale=False):
                 except Exception as e:
                     print(f"[AUDIT ERROR] Could not save token audit: {e}")
 
-            final_output = clean_json_response(response.text) #parse JSON string to Python dict
+            final_output = process_response(response.text, game_room.players.values()) #parse JSON string to Python dict
             return final_output
         
         except errors.APIError as e:
