@@ -131,6 +131,19 @@ class World:
         new_biology = Biology(name, description, habitat, disposition)
         self.biology.append(new_biology)
     
+    #grab a list of all entity names, this is to be used for highlighting in the frontend
+    def get_entity_list(self):
+        entity_list = []
+        for g in self.groups:
+            entity_list.append(g.name)
+        for c in self.characters:
+            entity_list.append(c.name)
+        for l in self.locations:
+            entity_list.append(l.name)
+        for b in self.biology:
+            entity_list.append(b.name)
+        return entity_list
+
     #helper to convert object to dict for json saving
     def to_dict(self):
         return {
@@ -142,7 +155,7 @@ class World:
             'width': self.width,
             'height': self.height,
             'major_events': self.major_events,
-            'groups': [e.to_dict() for e in self.groups],
+            'groups': [g.to_dict() for g in self.groups],
             'characters': [c.to_dict() for c in self.characters],
             'locations': [l.to_dict() for l in self.locations],
             'biology' : [b.to_dict() for b in self.biology]
@@ -313,3 +326,81 @@ class GameRoom:
             'history': self.history,
             'is_private': bool(self.password) # flag if password is set
         }
+    
+#debugging
+if __name__ == "__main__":
+    worlds = {}
+    import json #i know it's strange to have imports here, but I don't need it otherwise
+    world_file = 'data/worlds.json'
+    with open(world_file, 'r') as f:
+        data = json.load(f)
+        for w_id, w_data in data.items():
+            #print(f"[DEBUG] Attempting to load world: {w_id}") #debug stuff
+            #defaults added for backward compatibility
+            #added width/height defaults
+            w = World(
+                w_data['name'], 
+                w_data.get('setting', 'Medieval Fantasy'), 
+                w_data.get('realism', 'High'), 
+                w_data['description'],
+                w_data.get('width', 1024),
+                w_data.get('height', 512)
+            )
+            w.id = w_data['id'] #overwrite random id
+            
+            #handle major_events. If they are strings, convert to dicts.
+            w.major_events = []
+            if 'major_events' in w_data:
+                for evt in w_data['major_events']:
+                    if isinstance(evt, str):
+                            w.add_event({"title": "Historical Event", "description": evt})
+                    else:
+                            w.add_event(evt)
+            
+            #load entities if they exist
+            if 'groups' in w_data:
+                for e_data in w_data['groups']:
+                    w.add_group(
+                        e_data['name'], 
+                        e_data['type'], 
+                        e_data['description'], 
+                        e_data.get('keywords', [])
+                    )
+
+            #load locations
+            if 'locations' in w_data:
+                for l_data in w_data['locations']:
+                    w.add_location(
+                        l_data['name'],
+                        l_data['type'],
+                        l_data['description'],
+                        l_data.get('x', 0),
+                        l_data.get('y', 0),
+                        l_data.get('radius', 1),
+                        l_data.get('affiliation', 'Independent'), #default to independent
+                        l_data.get('keywords', [])
+                    )
+
+            #load characters
+            if 'characters' in w_data:
+                for c_data in w_data['characters']:
+                    c_role = c_data.get('role', 'NPC')
+                    c_aff  = c_data.get('affiliation', 'None')
+                    c_stat = c_data.get('status', 'Alive') 
+
+                    #this line was crashing before because World.add_character didn't accept status
+                    w.add_character(c_data['name'], c_data['description'], c_role, c_aff, c_stat)
+
+            #load world biology
+            if 'biology' in w_data:
+                for b_data in w_data['biology']:
+                    w.add_biology(
+                        b_data['name'],
+                        b_data['description'],
+                        b_data['habitat'],
+                        b_data['disposition']
+                    )
+            worlds[w_id] = w
+            entity_list = w.get_entity_list()
+            for entity in entity_list:
+                print(entity)
