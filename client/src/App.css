@@ -701,6 +701,10 @@ textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
     color: var(--accent-gold);
 }
 
+.highlighted-entity {
+    color: var(--accent-dim);
+}
+
 .input-area {
   background-color: #000;
   padding: 15px;

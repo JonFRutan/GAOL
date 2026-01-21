@@ -495,7 +495,9 @@ def save_all_data():
 
 #clean markdown formatting from JSON responses (in case the AI uses it or it bleeds in)
 #you may have seen this happen if you try to get an AI model to format some markdown files.
-def process_response(text, players):
+def process_response(text, game_room):
+    players = game_room.players.values() #players in the room
+    entities = worlds[game_room.world_id].get_entity_list()
     #remove markdown from JSON response
     if "```json" in text:
         text = text.replace("```json", "").replace("```", "")
@@ -524,7 +526,13 @@ def process_response(text, players):
         replace_reg = r"\b(" + "|".join(player_names) + r")\b"
         if "story_text" in data:
             data["story_text"] = re.sub(replace_reg, r'<span class="highlighted-name">\1</span>', data["story_text"], flags=re.IGNORECASE)
-        return data
+    if entities:
+        entity_names = [re.escape(e) for e in entities]
+        print(f"[DEBUG] Entity Names: {entity_names}")
+        replace_reg = r"\b(" + "|".join(entity_names) + r")\b"
+        if "story_text" in data:
+            data["story_text"] = re.sub(replace_reg, r'<span class="highlighted-entity">\1</span>', data["story_text"], flags=re.IGNORECASE)
+    return data
 
 #this is the function responsible for collating all the prompt information, assembling it, and generating response.
 #this response contains the visually displayed story text, alongside all the world/character updates that must be made.
@@ -688,7 +696,7 @@ def generate_ai_response(game_room, is_embark=False, is_finale=False):
                 except Exception as e:
                     print(f"[AUDIT ERROR] Could not save token audit: {e}")
 
-            final_output = process_response(response.text, game_room.players.values()) #parse JSON string to Python dict
+            final_output = process_response(response.text, game_room) #parse JSON string to Python dict
             return final_output
         
         except errors.APIError as e:
