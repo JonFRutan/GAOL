@@ -512,7 +512,6 @@ def process_response(text, game_room):
         print("[SYSTEM] JSON Error detected. Attempting Regex patch...")
         try:
             text = re.sub(r'\\(?![\\"/bfnrtu])', r'\\\\', text)
-            return json.loads(text)
         except Exception as e:
             print(f"[CRITICAL AI ERROR] Could not patch JSON: {e}")
             print(f"[BAD JSON CONTENT] {text}")
@@ -523,8 +522,9 @@ def process_response(text, game_room):
             }
     if players:
         player_names = [re.escape(p.username) for p in players] #grab all palyer names
-        replace_reg = r"\b(" + "|".join(player_names) + r")\b"
+        replace_reg = r"\b(" + "|".join(f"{player_names}") + r")\b"
         if "story_text" in data:
+            data["story_text"] = re.sub(' ', '||', data["story_text"])
             data["story_text"] = re.sub(replace_reg, r'<span class="highlighted-name">\1</span>', data["story_text"], flags=re.IGNORECASE)
     if entities:
         entity_names = [re.escape(e) for e in entities]
@@ -532,6 +532,8 @@ def process_response(text, game_room):
         replace_reg = r"\b(" + "|".join(entity_names) + r")\b"
         if "story_text" in data:
             data["story_text"] = re.sub(replace_reg, r'<span class="highlighted-entity">\1</span>', data["story_text"], flags=re.IGNORECASE)
+    with open(os.path.join(DATA_DIR, 'processed.json'), 'w') as f:
+        json.dump(data, f, indent=2)
     return data
 
 #this is the function responsible for collating all the prompt information, assembling it, and generating response.

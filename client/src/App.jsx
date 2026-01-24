@@ -575,7 +575,11 @@ function App() {
           secret: secretInput
       });
   };
+  //stream words one at a time for a more dramatic flair.
+  const streamMessage = (message) => {
+     
 
+  };
 
   //User Submits Action (hits enter from input box)
   //sends player chat/action to server and rolls a client-side die
@@ -1166,7 +1170,7 @@ function App() {
               </div>
               <div id="msg-body" className="msg-body" style={{color: m.sender === 'System' ? '#555' : 'inherit', fontStyle: m.sender === 'System' ? 'italic' : 'normal'}}>
                 {m.sender !== 'GAOL' && m.sender !== 'System' && <span className="player-name">{m.sender}<br></br></span>}
-                <span dangerouslySetInnerHTML={{__html: m.text}} />
+                <span dangerouslySetInnerHTML={{__html: streamMessage(m.text)}} />
               </div>
             </div>
           ))}

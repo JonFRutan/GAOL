@@ -12,7 +12,7 @@
 <br />
 
 <p>
-  Embark on adventures with a party of up to 6 players through persistent worlds. <br/>
+  Embark on adventures with a party of up to 6 players through evolving worlds. <br/>
   You define your characters, ambitions, and even the secrets you keep from your allies.<br/>
   <b>GAOL will determine the fate of your characters actions and outcomes.</b>
 </p>
@@ -23,10 +23,11 @@ GAOL is a multiplayer AI storyteller based on the *AI Dungeon* Multiplayer and *
 
 ### Persistent Worlds
 Worlds are persistent, living, and richly defined.
-* **History:** Wars, disasters, epidemics, all major historical events are chronicled by GAOL. Your journey will be influenced by those who came before you, and may influence future adventurers.
-* **Figures:** World figures such as gods, kings, and mythical beings will have influence on the world. Their presence will influence the world and how it behaves. 
-* **Factions:** Factions and the influence will affect the way you may conduct yourselves. Be subjugated as slaves of an empire, or tracked down by vampire hunters, the world will treat you as it sees fit.
-* **Landmarks:** Explore, visit and discover locations across the world. Cities, monuments, graves, and anything else GAOL deems worth marking. 
+* **History:** Wars, disasters, epidemics, all major historical events are chronicled by GAOL. Your journey will be influenced by those who came before you, just as you influence the story of those who will come after you.
+* **Figures:** Barons, Kings, Gods and more. Obey the decrees of your sovereign, or seek to rebel against them. Major figures exist across the world, all to become apart of your adventure.
+* **Factions:** Be subjugated as slaves of a tyrannical empire, or tracked down by vampire hunters, the world will treat you as it sees fit. Different factions influence parts of the world, you can either become apart of them, or tear them down as you see fit.
+* **Landmarks:** GAOL's worlds are filled with cities, mountains, and a myriad of locations to explore.  
+* **Biology:** Document and discover the fauna and flora that inhabit the world.
 * **Scope:** Worlds are defined with sizes, so that locations can be marked with coordinates and to give them a vast sense of scale for your journey.
 
 ### Deep Characterization
