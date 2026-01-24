@@ -25,7 +25,7 @@ GAOL is a multiplayer AI storyteller based on the *AI Dungeon* Multiplayer and *
 Worlds are persistent, living, and richly defined.
 * **History:** Wars, disasters, epidemics, all major historical events are chronicled by GAOL. Your journey will be influenced by those who came before you, just as you influence the story of those who will come after you.
 * **Figures:** Barons, Kings, Gods and more. Obey the decrees of your sovereign, or seek to rebel against them. Major figures exist across the world, all to become apart of your adventure.
-* **Factions:** Be subjugated as slaves of a tyrannical empire, or tracked down by vampire hunters, the world will treat you as it sees fit. Different factions influence parts of the world, you can either become apart of them, or tear them down as you see fit.
+* **Factions:** Be subjugated as slaves of a tyrannical empire, or tracked down by vampire hunters. Different factions influence parts of the world, you can either become apart of them, or tear them down as you see fit.
 * **Landmarks:** GAOL's worlds are filled with cities, mountains, and a myriad of locations to explore.  
 * **Biology:** Document and discover the fauna and flora that inhabit the world.
 * **Scope:** Worlds are defined with sizes, so that locations can be marked with coordinates and to give them a vast sense of scale for your journey.
