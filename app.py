@@ -1,16 +1,22 @@
 #jfr
 
 #FIXME
-#1. Figure statuses aren't seeming to be updated 
+#1. Inline formatting for entity/name highlighting is being read by TTS
+#2. AI is unnecessarily updating character summary
+#3. Add a Retry button for failed generations due to overloading
+#4. AI will randomly add events as historical events.
+#5. Ensure the AI is giving a result for the players move.
+#6. Fix API key changing mid-game session
+#7. Entering new sessions will carry over character sheet data
+
 
 #ADDME
-#1. Highlight player names in the GAOL response.
-#2. Save-state for games so people can pick back up their campaign.
-#3. Color picker for each player, which is what will highlight their name.
-#4. Campaign World
-#5. Personal Worlds
+#1. Save-state for games so people can pick back up their campaign.
+#2. Color picker for each player, which is what will highlight their name.
+#3. Campaign World
+#4. Personal Worlds
 
-print("------------------------------ GAOL v1.7 ------------------------------")
+print("------------------------------ GAOL v1.8 ------------------------------")
 import                     os, json, time, re, traceback
 from google         import genai
 from flask_cors     import CORS
@@ -50,7 +56,6 @@ else:
 #get the absolute path of the directory where app.py is located
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
-
 
 WORLDS_FILE = os.path.join(DATA_DIR, 'worlds.json')
 ROOMS_FILE = os.path.join(DATA_DIR, 'rooms.json')
@@ -169,6 +174,10 @@ class RelevanceEngine:
         #scores against major events and worldentites
         scored_items = []
         
+        #FIXME
+        #The relevance engine currently processes the relevance of groups, locations, and world events.
+        #The relevance engine doesn't currently process characters or biology, ADD THESE.
+        
         #process groups/factions
         for group in world.groups:
             score = 0
@@ -231,6 +240,8 @@ class RelevanceEngine:
             final_score = score + recency_score
             
             #keep the most recent event in mind, even if it's not super relevant.
+            #NOTE - this may be causing some immersion breaking recency bias.
+            #For example, if a world has one event, every single story beginning seems to reference that event heavily.
             if i == total_events - 1:
                 final_score += 10 
 
@@ -240,7 +251,9 @@ class RelevanceEngine:
             })
             
         #sort the items by their score, and slice the most relevant scorings.
-        scored_items.sort(key=lambda x: x['score'], reverse=True)
+        #lambda x is an individual item, x['score'] looks at the score key in each item to determine the order
+        #python sorts smallest -> largest by default, so the reverse flag will flip this to be highest score, to lowest score
+        scored_items.sort(key=lambda x: x['score'], reverse=True) 
         top_items = scored_items[:limit]
         
         return "\n".join([item['text'] for item in top_items])

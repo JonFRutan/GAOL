@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { debugLog } from './utils/logger.js'; //debugging logger
+import { debugLog } from './hooks/logger.js'; //debugging logger
+import LoginScreen from './components/Login/LoginScreen.jsx';
 import SamJs from 'sam-js';
 import io from 'socket.io-client';
 import './App.css';
@@ -14,6 +15,52 @@ function App() {
   //////////////////////////////////////
   //store client data
   //including frontend display states
+
+  //authentication / room connection
+  const [auth, setAuth] = useState ({
+    username: '',             //players username
+    room: '',                 //room a player is in
+    isAdmin: false,           //are you the admin of the room
+    apiKey: '',               //api key for the current room 
+    serverHasKey: null        //does the server have an api key
+  });
+
+  //ui state and active modals
+  const [ui, setUi] = useState ({
+    view: 'login',            //gamestate login / playing
+    activeModal: null,        //show modal booleans
+    statusMsg: '',            //status messages, e.g. "Disconnected"
+    activeTab: 'character',   //Tab active in game, defaults to your player tab
+    worldTab: 'history'       //active subtab within the world tab, defaults to the worlds history
+  });
+
+  //game data in an active session
+  const [game, setGame] = useState({
+    messages: [],             //messages in the game
+    party: [],                //party members, stats, and statuses
+    worldData: null,          //data of the loaded world, history, figures, etc.
+    isReady: false,           //have you submitted your turn.
+    isEmbarking: false,       //
+    isFinale: false,
+    lastRoll: null
+  });
+
+  //user and world creation form
+  const [creationForm, setCreationForm] = useState ({
+    //login/creation form
+    mode: 'join',
+    password: '',
+    worldId: '',
+    newWorldName: '',
+    setting: '',
+    realism: 'High',
+    size: 'Medium',
+    //character sheet
+    desc: '',
+    tags: '',
+    ambition: '',
+    secret: ''
+  });
 
   //tracks if user is in 'login' screen or 'playing' the game
   const [gameState, setGameState] = useState('login'); 
@@ -158,14 +205,9 @@ function App() {
   //useEffects are automatically run at start
   //some of them only run once, some run when specific consts update, some run every time anything updates.
 
-  //checks local storage for a previously saved api key on mount
   //runs once at start, then never again.
   useEffect(() => {
     window.speechSynthesis.getVoices(); //grabs voices to initialize
-    const savedKey = localStorage.getItem('gaol_api_key');
-    if (savedKey) {
-        setCustomApiKey(savedKey);
-    }
     
     //attempt to rejoin if a session exists in local storage\\
     //runs once at start, then never again
@@ -464,11 +506,6 @@ function App() {
         return;
     }
 
-    //saves custom key to local storage for convenience
-    if (hasCustom) {
-        localStorage.setItem('gaol_api_key', customApiKey);
-    }
-
     //calculate Resolution based on size selection (2:1 Ratio Enforced)
     let mapWidth = 1024;
     let mapHeight = 512;
@@ -745,6 +782,20 @@ function App() {
   ///////////////////////////////////////////////
   
   //render logic for the initial login/lobby screen
+  if (ui.view === 'login') {
+    return (
+        <LoginScreen 
+            auth={auth}        // Pass the grouped object
+            setAuth={setAuth}  // Pass the updater
+            ui={ui}
+            setUi={setUi}
+            socket={socket}
+            activeRooms={game.activeRooms}
+            availableWorlds={availableWorlds}
+        />
+    );
+}
+
   if (gameState === 'login') {
     return (
       <div className="login-container">
