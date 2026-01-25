@@ -34,6 +34,8 @@ function App() {
     worldTab: 'history'       //active subtab within the world tab, defaults to the worlds history
   });
 
+
+  //TO BE REMOVED
   //game data in an active session
   const [game, setGame] = useState({
     messages: [],             //messages in the game
@@ -45,34 +47,11 @@ function App() {
     lastRoll: null
   });
 
-  //user and world creation form
-  const [creationForm, setCreationForm] = useState ({
-    //login/creation form
-    mode: 'join',
-    password: '',
-    worldId: '',
-    newWorldName: '',
-    setting: '',
-    realism: 'High',
-    size: 'Medium',
-    //character sheet
-    desc: '',
-    tags: '',
-    ambition: '',
-    secret: ''
-  });
-
   //tracks if user is in 'login' screen or 'playing' the game
   const [gameState, setGameState] = useState('login'); 
-  //toggles between 'join' existing room or 'create' new room forms
-  const [loginMode, setLoginMode] = useState('join'); 
   //basic user inputs for authentication
   const [username, setUsername] = useState('');
   const [room, setRoom] = useState('');
-  //Password states
-  const [createPassword, setCreatePassword] = useState('');
-  const [joinPassword, setJoinPassword] = useState('');
-  const [showPwdModal, setShowPwdModal] = useState(false);
   const [pendingRoom, setPendingRoom] = useState(''); //stores room ID while waiting for password
   //list of available lobbies fetched from server
   const [activeRooms, setActiveRooms] = useState([]);
@@ -96,13 +75,7 @@ function App() {
   const [setting, setSetting] = useState('');
   const [realism, setRealism] = useState('High');
   const [selectedWorld, setSelectedWorld] = useState('');
-  const [newWorldName, setNewWorldName] = useState('');
   const [availableWorlds, setAvailableWorlds] = useState([]);
-  //world size parameter
-  const [worldSize, setWorldSize] = useState('Medium');
-  //state for custom API key
-  const [customApiKey, setCustomApiKey] = useState('');
-  //track if server has a default key (null = loading)
   const [serverHasKey, setServerHasKey] = useState(null);
   //gameplay data containers
   const [messages, setMessages] = useState([]);
@@ -118,8 +91,6 @@ function App() {
   const [activeTab, setActiveTab] = useState('character'); 
   //toggles sub-tabs within the world sheet
   const [worldTab, setWorldTab] = useState('history');
-  //state for about modal
-  const [showAbout, setShowAbout] = useState(false);
   //particles for embark explosion
   const [particles, setParticles] = useState([]);
   //ref used for auto-scrolling chat
@@ -137,8 +108,6 @@ function App() {
   //constants for when the kick screen is to be shown
   const [showKickModal, setShowKickModal] = useState(false);
   const [kickTarget, setKickTarget] = useState('');
-  //world creation menu constant
-  const [showCreateModal, setShowCreateModal] = useState(false);
   //TTS stuff
   //Audio context refs
   const audioCtxRef = useRef(null);
@@ -297,18 +266,15 @@ function App() {
     });
     //set up polling interval for rooms list (every 3 seconds)
     const roomPollInterval = setInterval(() => {
-        if(gameState === 'login') {
+        if(ui.view === 'login') {
             socket.emit('get_rooms');
         }
     }, 3000);
 
     //password Requirement Trigger
     socket.on('password_required', (data) => {
-        setPendingRoom(data.room);
-        setStatusMsg("Restricted Access: Password Required.");
-        setShowPwdModal(true);
+        setUi(prev => ({ ...prev, pendingRoom: data.room, statusMsg: "Password Required."}));
     });
-
     //handle room closure by host
     //this can be caused by emissions from
     //app.py : on_leave and handle_rejoin
@@ -325,25 +291,26 @@ function App() {
     });
     //handles successful room entry, switching view to game
     socket.on('join_success', (data) => {
-      setRoom(data.room);
-      setCurrentWorldName(data.world);
-      setWorldData(data.world_details); 
-      setIsAdmin(data.is_admin); 
-      if(data.history && data.history.length > 0) setMessages(data.history);
-      setGameState('playing');
-      setJoinPassword(''); // clear password on success
-      setShowPwdModal(false);
-      setIsEmbarking(false); // reset embark state
+      setAuth(prev => ({
+        ...prev,
+        room: data.room,
+        username: data.username,
+        isAdmin: data.is_admin
+      }));
+      setWorldData(data.world_details);
+      if(data.history && data.history.length > 0) setMessages (data.history);
+      setUi(prev => ({ ...prev, view: 'playing', statusMsg: 'Connected'}));
+
+      //game states - to be removed
+      setIsEmbarking(false);
       setIsFinale(false);
-      setShowOverrideModal(false); // reset override state
-      
+
       localStorage.setItem('gaol_session', JSON.stringify({ username: data.username, room: data.room }));
     });
-    //END LOGIN VIEW
     
     //INGAME VIEW SOCKETS
     //listens for incoming chat messages
-    socket.on('message', (data) => handleMessages(data));
+    socket.on('message', (data) => setMessages(prev => [...prev, data]));
     //updates the top status ticker
     socket.on('status', (data) => setStatusMsg(data.msg));
     //updates the list of players and their stats
@@ -365,14 +332,11 @@ function App() {
     });
     //handle admin status update (transfer)
     socket.on('admin_update', (data) => {
-        if(data.is_admin) {
-            setIsAdmin(true);
-            setStatusMsg("You are now the Admin.");
-        } else {
-            setIsAdmin(false);
-            setStatusMsg("Admin privileges revoked.");
-        }
+        setAuth(prev => ({ ...prev, isAdmin: data.is_admin }));
+        setStatusMsg(data.is_admin ? "You are now the room's admin." : "Admin privileges have been removed.")
     });
+    socket.on('room_close', handleExit);
+    socket.on('kicked', handleExit);
     //END INGAME VIEW
 
     //cleanup listeners on unmount
@@ -392,10 +356,7 @@ function App() {
       socket.off('admin_update');
       clearInterval(roomPollInterval); //clear interval
     };
-  }, [gameState]); //dependency on gameState ensuring interval respects login status
-  //NOTE: if gameState is updated, this useEffect will be rerun, hence why they are within the end array.
-  //FIXME: This is a bit silly, we don't need to close and reopen sockets on every game state change.
-  //       this should potentially be moved into a couple different movestates for sockets that need to beupdated, and those that may be static.
+  }, [ui.view]); //dependency on gameState ensuring interval respects login status
 
   //auto-scrolls to the bottom of chat when new messages arrive
   useEffect(() => {
@@ -404,8 +365,8 @@ function App() {
   //runs every time the messages field is updated
 
   //helper to find the current user's stats object
-  const myStats = partyStats.find(p => p.name === username) || { 
-    name: username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: '', is_ready: false //default stuff
+  const myStats = partyStats.find(p => p.name === auth.username) || { 
+    name: auth.username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: '', is_ready: false //default stuff
   };
 
   //TTS effects for story text, uses Software Automatic Mouth, an old piece of software.
@@ -425,7 +386,6 @@ function App() {
       // if server has data, populate local state to prevent overwrites
       if(myStats.is_ready || (myStats.description && myStats.description.length > 0)) {
           if(myStats.is_ready) setIsReady(true);
-          
           if(myStats.description) setUserDescription(myStats.description);
           if(myStats.tags) setTagsInput(myStats.tags.join(', '));
           if(myStats.ambition) setAmbitionInput(myStats.ambition);
@@ -450,89 +410,6 @@ function App() {
   const nonSystemMessages = messages.filter(m => m.sender !== 'System'); //filters out system messages from all the messages
   const isGameActive = nonSystemMessages.length > 0; //if messages have been sent that aren't system messages (e.g. changing AI model), the game is active
   const isLockedIn = isReady || myStats.is_ready || isGameActive;
-
-  //////////////////////////////////////
-  //           LOGIN HANDLERS         //
-  //////////////////////////////////////
-
-  //handles standard room joining logic
-  const handleJoin = () => {
-    if(!username.trim()) {
-        setStatusMsg("ERROR: Username required.");
-        return;
-    }
-    if (username && room) {
-      socket.emit('join', { username, room });
-      setSelectedPlayer(username);
-    }
-  };
-
-  //submit password from modal
-  const handlePasswordSubmit = () => {
-      if(pendingRoom && username) {
-          socket.emit('join', { username, room: pendingRoom, password: joinPassword });
-          // NOTE: we don't close modal here immediately, we wait for join_success or another error
-      }
-  };
-  
-  //handles joining via the lobby list buttons
-  const handleQuickJoin = (targetRoomId) => {
-      if(!username.trim()) {
-          setStatusMsg("ERROR: Enter a username first.");
-          return;
-      }
-      setRoom(targetRoomId); 
-      socket.emit('join', { username, room: targetRoomId });
-      setSelectedPlayer(username);
-  };
-
-  //handles room creation including validation of api keys
-  const handleCreate = () => {
-    if (!username || !room) {
-        setStatusMsg("ERROR: Username and Room Code required.");
-        return;
-    }
-    
-    //strict API key validation
-    //use custom key if present, otherwise rely on server key.
-    //if NO custom key AND NO server key, block creation.
-    const hasCustom = customApiKey && customApiKey.trim().length > 10;
-    
-    //default to false for safety if server config hasn't loaded yet
-    const safeServerHasKey = serverHasKey === true;
-    
-    if (!hasCustom && !safeServerHasKey) {
-        setStatusMsg("REQUIRED: Enter API Key (Server has no default).");
-        return;
-    }
-
-    //calculate Resolution based on size selection (2:1 Ratio Enforced)
-    let mapWidth = 1024;
-    let mapHeight = 512;
-    
-    if(worldSize === 'Small') {
-        mapWidth = 512;
-        mapHeight = 256;
-    } else if(worldSize === 'Large') {
-        mapWidth = 2048;
-        mapHeight = 1024;
-    }
-
-    const finalWorldSelection = selectedWorld || 'NEW';
-    socket.emit('create_room', {
-      username,
-      room,
-      setting,
-      realism,
-      world_selection: finalWorldSelection,
-      new_world_name: newWorldName,
-      custom_api_key: customApiKey,
-      password: createPassword, // Optional password
-      width: mapWidth,
-      height: mapHeight
-    });
-    setSelectedPlayer(username);
-  };
 
   //////////////////////////////////////
   //          INGAME HANDLERS         //
@@ -566,6 +443,16 @@ function App() {
     setTimeout(() => setParticles([]), 1000);
 
     socket.emit('embark', { room });
+  };
+
+  // Room Closed / Kicked
+  const handleExit = (data) => {
+      setUi(prev => ({ ...prev, view: 'login', statusMsg: data.msg }));
+      setAuth(prev => ({ ...prev, room: '', isAdmin: false }));
+      setMessages([]);
+      setPartyStats([]);
+      setIsReady(false);
+      localStorage.removeItem('gaol_session');
   };
 
   //cleanly handle the leave room button
@@ -794,328 +681,7 @@ function App() {
             availableWorlds={availableWorlds}
         />
     );
-}
-
-  if (gameState === 'login') {
-    return (
-      <div className="login-container">
-        
-        {/* Left Sidebar for Login */}
-        <div className="login-sidebar">
-            {loginMode === 'join' && (
-                <>
-                <img class="thumbnail-image" src="/GaolIcon.png"></img>
-                <h1>GAOL</h1>
-                </>
-              )}
-            {loginMode === 'create' && (
-                <>
-                <h1 style={{fontSize:'2rem'}}>GAOL</h1>
-                </>
-              )}
-            <div className="login-box">
-              {/* toggles between join and create modes */}
-              <div className="toggle-bar">
-                 <button 
-                   className={`toggle-btn ${loginMode === 'join' ? 'active' : ''}`}
-                   onClick={()=>setLoginMode('join')}
-                 >
-                   JOIN ROOM
-                 </button>
-                 <button 
-                   className={`toggle-btn ${loginMode === 'create' ? 'active' : ''}`}
-                   onClick={()=>setLoginMode('create')}
-                 >
-                   CREATE ROOM
-                 </button>
-              </div>
-
-              <div className="form-row">
-                <label className="login-label">Username</label>
-                <input placeholder="e.g. Shadowhawk30" vale={username} onChange={e => setUsername(e.target.value)} />
-              </div>
-
-              <div className="form-row">
-                <label className="login-label">Room Code</label>
-                <input 
-                    placeholder="e.g. 1987" 
-                    value={room} 
-                    onChange={e => setRoom(e.target.value)} 
-                />
-              </div>
-
-              {/* conditional rendering for creation inputs */} 
-              {loginMode === 'create' && (
-                <>
-                  {/* optional password field */}
-                  <div className="form-row">
-                      <label className="login-label">Password (Optional)</label>
-                      <input 
-                        type="password"
-                        placeholder="Leave empty for public"
-                        value={createPassword}
-                        onChange={e => setCreatePassword(e.target.value)}
-                      />
-                  </div>
-
-                  {/* custom API key input */}
-                  <div className="form-row">
-                    <label className="login-label" style={{color: 'var(--terminal-green)'}}>
-                      Gemini API Key
-                    </label>
-                    <input 
-                        placeholder={serverHasKey ? "Server Key Active (Optional)" : "REQUIRED"}
-                        value={customApiKey}
-                        onChange={e => setCustomApiKey(e.target.value)}
-                        type="password"
-                        style={{
-                            borderColor: (!customApiKey && !serverHasKey) ? 'var(--alert-red)' : 'var(--accent-dim)'
-                        }}
-                    />
-                  </div>
-                  
-                  {/* spacer to push world selection to bottom */}
-                  <div style={{height: '20px'}}></div>
-
-                  {/* World Selection */}
-                  <div className="form-row">
-                    <label className="login-label">World</label>
-                    <select onChange={e => setSelectedWorld(e.target.value)} value={selectedWorld}>
-                      {availableWorlds.map(w => (
-                          <option key={w.id} value={w.id}>{w.name}</option>
-                      ))}
-                      {/* updates label to show the user's custom name if entered */}
-                      <option value="NEW">
-                          {newWorldName ? `[NEW] ${newWorldName}` : "+ Create New World"}
-                      </option>
-                    </select>
-                  </div>
-                  
-                  {/* Dynamic World Info Card */}
-                  <div className="world-info-card">
-                      {selectedWorld === 'NEW' ? (
-                          <>
-                              <div className="world-card-title">
-                                  {newWorldName || "NEW WORLD"}
-                              </div>
-                              <div className="world-card-meta">
-                                  <span>{realism} Realism</span>
-                                  <span>{worldSize} Map</span>
-                              </div>
-                              <div className="world-card-desc">
-                                  {setting || "No setting description provided..."}
-                              </div>
-                          </>
-                      ) : (
-                        /* Logic to display existing world details */
-                        (() => {
-                           const w = availableWorlds.find(w => w.id === selectedWorld);
-                           if(!w) return null;
-                           return (
-                              <>
-                                <div className="world-card-title">{w.name}</div>
-                                <div className="world-card-meta">
-                                    <span>{w.realism} Realism</span>
-                                    {/* Calculated size display based on width */}
-                                    <span>
-                                        {w.width === 512 ? 'Small' : w.width === 2048 ? 'Large' : 'Medium'} Map
-                                    </span>
-                                </div>
-                                <div className="world-card-desc">
-                                    {/* Prefer description, fallback to setting if desc is empty/default */}
-                                    {w.description && w.description !== "A newly discovered realm." ? w.description : w.setting}
-                                </div>
-                              </>
-                           );
-                        })()
-                      )}
-                  </div>
-
-                  {/* customization button*/}
-                  {selectedWorld === 'NEW' && (
-                       <div className="form-row" style={{marginBottom: '10px'}}>
-                           <button className="setup-btn" onClick={() => setShowCreateModal(true)}>
-                               CUSTOMIZE WORLD
-                           </button>
-                       </div>
-                  )}
-                </>
-              )}
-
-              <button 
-                className="action-btn"
-                onClick={loginMode === 'join' ? handleJoin : handleCreate}
-              >
-                {loginMode === 'join' ? 'ENTER' : 'INITIALIZE'}
-              </button>
-              
-              {/* error or status feedback */}
-              <div style={{color:'red', marginTop:'10px', fontSize:'0.8rem', textAlign:'center'}}>
-                {statusMsg !== 'System Ready...' ? statusMsg : ''}
-              </div>
-
-              {/* active rooms table (autorefreshing) */}
-              {loginMode === 'join' && activeRooms.length > 0 && (
-                  <div className="room-list-container">
-                      <h3>Available Rooms</h3>
-                      <table className="room-table">
-                          <thead>
-                              <tr>
-                                  <th>ID</th>
-                                  <th>World</th>
-                                  <th>#</th>
-                                  <th>API</th>
-                                  <th>Action</th>
-                              </tr>
-                          </thead>
-                          <tbody>
-                              {activeRooms.map(r => (
-                                  <tr key={r.id}>
-                                      <td style={{color: 'var(--accent-gold)'}}>{r.id}</td>
-                                      <td>{r.world}</td>
-                                      <td>{r.player_count}/6</td>
-                                      <td>
-                                          {/* visual indicators for key availability */}
-                                          {r.has_custom_key ? (
-                                              <span style={{color:'var(--terminal-green)', fontWeight:'bold'}}>SELF</span>
-                                          ) : (
-                                              serverHasKey ? (
-                                                  <span style={{color:'#444'}}>SYS</span>
-                                              ) : (
-                                                  <span style={{color:'var(--alert-red)', fontWeight:'bold'}}>ERR</span>
-                                              )
-                                          )}
-                                      </td>
-                                      <td style={{textAlign:'right'}}>
-                                          <button 
-                                              className="join-sm-btn"
-                                              onClick={() => handleQuickJoin(r.id)}
-                                          >
-                                              {r.is_private ? "LOCKED" : "JOIN"}
-                                          </button>
-                                      </td>
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
-                  </div>
-              )}
-
-            </div>
-        </div>
-        
-        {/* splash area */}
-        <div className="login-splash">
-           {/* splash content is here, pulled from src/assets */}
-        </div>
-
-        {/* login page footer */}
-        <div className="login-footer">
-             <button className="footer-btn" onClick={() => setShowAbout(true)}>ABOUT</button>
-             <button className="footer-btn" onClick={() => setStatusMsg("Data features coming soon...")}>DATA</button>
-        </div>
-        {/* credit where credit is due */}
-        <div 
-            className="login-placeholder" 
-            onClick={() => window.open('https://cehodum.wixsite.com/chelsea-portfolio', '_blank')}
-        >
-            Art by Chelsea Hodum
-        </div>
-
-        {/* About Modal */}
-        {showAbout && (
-             <div className="about-modal-overlay">
-                 <div className="about-modal-box">
-                      <h2>About GAOL</h2>
-                      <div className="about-content">
-                        <p>GAOL is a multiplayer AI storyteller experience.</p>
-                        <p>Inspired by <i>AI Dungeon</i> and <i>Death by AI</i>, I sought to recreate the multiplayer experience with a rich, evolving world.</p>
-                        <p>Create a room, define your setting, and embark on a collaborative storytelling journey with friends.</p>
-                        <p><a href="https://github.com/JonFRutan/GAOL">GitHub</a> || <a href="https://www.linkedin.com/in/jonathanrutan/">LinkedIn</a> || <a href="https://jfelix.space">jfelix</a></p>
-                      </div>
-                      <button className="join-sm-btn" style={{width: '100%', marginTop: '20px'}} onClick={() => setShowAbout(false)}>CLOSE</button>
-                 </div>
-             </div>
-        )}
-
-        {/* Password Prompt Modal */}
-        {showPwdModal && (
-            <div className="about-modal-overlay">
-                <div className="about-modal-box">
-                    <h2>SECURE ROOM</h2>
-                    <p style={{color:'#888', marginBottom:'15px'}}>Room {pendingRoom} is password protected.</p>
-                    <input 
-                        type="password"
-                        placeholder="Enter Password"
-                        value={joinPassword}
-                        onChange={e => setJoinPassword(e.target.value)}
-                        style={{
-                            width: '100%', padding:'10px', background:'#000', 
-                            border:'1px solid var(--accent-gold)', color:'var(--accent-gold)',
-                            marginBottom: '20px', textAlign: 'center'
-                        }}
-                    />
-                    <div style={{display:'flex', width:'100%', gap:'10px'}}>
-                        <button className="join-sm-btn" style={{flex:1}} onClick={() => setShowPwdModal(false)}>CANCEL</button>
-                        <button className="action-btn" style={{flex:1, marginTop:0}} onClick={handlePasswordSubmit}>UNLOCK</button>
-                    </div>
-                </div>
-            </div>
-        )}
-        {/* World Creation Modal */}
-        {showCreateModal && (
-            <div className="about-modal-overlay">
-                <div className="about-modal-box">
-                    <h2 style={{color:'var(--accent-gold)'}}>WORLD CREATION</h2>
-                    <p style={{color:'#666', marginBottom:'20px', fontSize:'0.8rem'}}>Create a new world.</p>
-                    
-                    <div style={{width:'100%', display:'flex', flexDirection:'column', gap:'15px'}}>
-
-                        <div className="form-row">
-                             <label className="login-label">Name</label>
-                             <input placeholder="e.g. Middle Earth" value={newWorldName} onChange={e => setNewWorldName(e.target.value)} />
-                        </div>
-                        
-                        <div className="form-row">
-                            <label className="login-label">Realism</label>
-                            <select onChange={e => setRealism(e.target.value)} value={realism}>
-                              <option value="High">High</option>
-                              <option value="Mid">Medium</option>
-                              <option value="Low">Low</option>
-                            </select>
-                        </div>
-                        
-                        <div className="form-row">
-                            <label className="login-label">Map Size</label>
-                            <select onChange={e => setWorldSize(e.target.value)} value={worldSize}>
-                              <option value="Small">Small (512 x 256)</option>
-                              <option value="Medium">Medium (1024 x 512)</option>
-                              <option value="Large">Large (2048 x 1024)</option>
-                            </select>
-                        </div>
-
-                        <div style={{borderBottom: '1px solid #333', margin: '10px 0'}}></div>
-
-                        <div className="form-row" style={{alignItems:'flex-start'}}>
-                            <label className="login-label" style={{marginTop:'10px', color:'var(--accent-gold)'}}>Setting</label>
-                            <textarea 
-                                placeholder="Describe your world here..." 
-                                value={setting} 
-                                onChange={e => setSetting(e.target.value)} 
-                            />
-                        </div>
-                    </div>
-
-                    <button className="action-btn" style={{marginTop:'25px'}} onClick={() => setShowCreateModal(false)}>
-                        CONFIRM SETTINGS
-                    </button>
-                </div>
-            </div>
-        )}
-      </div>
-    );
-  }
-
+  } else if (ui.view === 'playing') {
   //render logic for the main game interface
   return (
     <div className="main-layout">
@@ -1717,6 +1283,7 @@ function App() {
         )}
     </div>
   );
+}
 }
 
 export default App;
