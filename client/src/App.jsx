@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { debugLog } from './hooks/logger.js'; //debugging logger
 import LoginScreen from './components/Login/LoginScreen.jsx';
+import GameScreen from './components/Game/GameScreen.jsx';
 import SamJs from 'sam-js';
 import io from 'socket.io-client';
 import './App.css';
@@ -682,6 +683,16 @@ function App() {
         />
     );
   } else if (ui.view === 'playing') {
+    return (
+        <GameScreen 
+            auth={auth}        // Pass the grouped object
+            setAuth={setAuth}  // Pass the updater
+            ui={ui}
+            setUi={setUi}
+            socket={socket}
+            joinedWorldData={worldData}
+        />
+    );
   //render logic for the main game interface
   return (
     <div className="main-layout">
