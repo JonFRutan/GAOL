@@ -9,15 +9,16 @@
         isReady: false,           //have you submitted your turn.
         isEmbarking: false,       //
         isFinale: false,
-        lastRoll: null
+        lastRoll: null,
+        currentModel: 'gemini-2.5-flash-lite'
     });
 
-    const [player, setPlayer] = useState({
-        username: '',
-        tags: [],
+    const [playerForm, setPlayerForm] = useState({
+        tags: '',
         description: '',
-        
-    })
+        ambition: '',
+        secret: ''
+    });
 
     const myStats = game.party.find(p => p.name === auth.username) || {
         name: auth.username, hp: 100, status: 'Alive', description: '', tags: [], ambition: '', secret: '', is_ready: false
@@ -25,17 +26,19 @@
     const nonSystemMessages = game.messages.filter(m => m.sender !== 'System'); //filters out system messages from all the messages
     const isGameActive = nonSystemMessages.length > 0; //if messages have been sent that aren't system messages (e.g. changing AI model), the game is active
     const isLockedIn = game.isReady || isGameActive;
+    const [selectedPlayer, setSelectedPlayer] = useState(null);
     const displayedPlayer = game.party.find(p => p.name === selectedPlayer) || myStats;
     const isOwnSheet = displayedPlayer.name === auth.username;
-    const [inputValue, setInputValue] = useState('');
+    const [actionInput, setActionInput] = useState('');
+    const [newKeyInput, setNewKeyInput] = useState('');
+    const [overrideText, setOverrideText] = useState('');
+
     //particles for embark explosion
     const [particles, setParticles] = useState([]);
     //ref used for auto-scrolling chat
     const chatEndRef = useRef(null);
-
     //TTS toggle state
     const [ttsEnabled, setTtsEnabled] = useState(false)
-    const [showVoiceModal, setShowVoiceModal] = useState(false);
     //SAM initialization
     const [samConfig, setSamConfig] = useState({
         pitch: 64,    // Default: 64. Lower (30-50) & Higher (100+) 
@@ -45,10 +48,14 @@
         volume: 50    // Default: 50. Volume of SAM. this actually modifies our gain node, not SAMs gain directly
     });
     const [sam, setSam] = useState(null);
-    
+    useEffect(() => {
+        if(auth.username && !selectedPlayer) setSelectedPlayer(auth.username);
+    }), [auth.username, selectedPlayer]
+
     useEffect(() => {
         if (joinedWorldData) {setGame(prev => ({...prev, worldData: joinedWorldData}));}
     }, [joinedWorldData]);
+
     //auto-scrolls to the bottom of chat when new messages arrive
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -93,11 +100,11 @@
     //cleanly handle the leave room button
     //FIXME
     const handleLeave = () => {
-        if(room) {
-            socket.emit('leave_room', { room });
+        if(auth.room) {
+            socket.emit('leave_room', { room: auth.room });
         }
         //reset local state
-        setGameState('login');
+        setUi(prev => ({...prev, view: 'login'}));
         setRoom('');
         setMessages([]);
         setPartyStats([]);
@@ -110,7 +117,7 @@
     //handle game finale
     const handleFinale = () => {
         setGame(prev => ({...prev, isFinale: true }));
-        socket.emit('finale', { room });
+        socket.emit('finale', { room: auth.room });
         //setIsReady(false);
     }
 
@@ -120,7 +127,7 @@
         //prevent overwrite if already ready (checking LockedIn, which covers both server and client state)
         if(isLockedIn) return;
 
-        const tags = tagsInput.split(',').filter(t => t.trim().length > 0);
+        const tags = playerForm.tags.split(',').filter(t => t.trim().length > 0);
         if(tags.length === 0) { setStatusMsg("Define your character tags."); return; }
         if(tags.length > 5) { setStatusMsg("Too many tags (Max 5)."); return; }
         if(!ambitionInput.trim()) { setStatusMsg("Define your ambition."); return; }
@@ -146,12 +153,12 @@
         if(game.isFinale) {
             return;
         }
-        if (inputValue.trim()) {
+        if (actionInput.trim()) {
         const roll = Math.floor(Math.random() * 20) + 1; //generates a number between 1-20
         //FIXME: Perhaps in the future we should add die modifiers like DnD? Things like advantage or bonuses.
         setLastRoll(roll);
-        socket.emit('player_action', { username, room, message: inputValue, roll: roll });
-        setInputValue('');
+        socket.emit('player_action', { username, room, message: actionInput, roll: roll });
+        setActionInput('');
         }
     };
 
@@ -161,16 +168,16 @@
         if (overrideText.trim()) {
             socket.emit('submit_override', { room, text: overrideText });
             setOverrideText('');
-            setShowOverrideModal(false); // return to normal view
+            setUi(prev => ({...prev, overlayMode: ''})); // return to normal view
         }
     };
 
     //AI Model Change Button
     //handles admin changing the AI model
     const handleModelChange = (modelName) => {
-        socket.emit('change_model', { room, model: modelName });
-        setCurrentModel(modelName);
-        setShowModelModal(false);
+        socket.emit('change_model', { room: auth.room, model: modelName });
+        setGame(prev => ({...prev, currentModel: modelName}));
+        setUi(prev => ({ ...prev, overlayMode: 'model' }));
     };
 
     //API Key button
@@ -178,7 +185,7 @@
     const submitNewKey = () => {
         if(newKeyInput.trim().length > 10) {
             socket.emit('update_api_key', { room, new_key: newKeyInput });
-            setShowKeyModal(false);
+            setUi(prev => ({ ...prev, overlayMode: 'key' }));
             setNewKeyInput('');
         } else {
             //simple validation feedback
@@ -191,13 +198,13 @@
     const handleKick = (targetName, e) => {
         e.stopPropagation(); //prevent selecting the card
         setKickTarget(targetName);
-        setShowKickModal(true);
+        setUi(prev => ({ ...prev, overlayMode: 'kick' }));
     };
     //pop-up to confirm the kicking
     //FIXME: this uses the default browser pop up, ugly
     const confirmKick = () => {
         socket.emit('kick_player', { room, target_name: kickTarget });
-        setShowKickModal(false);
+        setUi(prev => ({ ...prev, overlayMode: '' }));
     };
 
     //Party View Promote Button
@@ -206,7 +213,7 @@
         e.stopPropagation();          //prevent selecting the card
         setPromoteTarget(targetName);
         setRevokeKeyOnPromote(false); //default unchecked
-        setShowPromoteModal(true);
+        setUi(prev => ({ ...prev, overlayMode: 'promote' }));
     };
     //submit promotions
     const submitPromote = () => {
@@ -215,7 +222,7 @@
             target_name: promoteTarget, 
             revoke_key: revokeKeyOnPromote 
         });
-        setShowPromoteModal(false);
+        setUi(prev => ({ ...prev, overlayMode: '' }));
     };
 
     //check to see if everyone is ready so embark button can be enabled
@@ -373,27 +380,27 @@
                 </button>
             {/* TTS Options Button */}
                 <button 
-                    className={`nav-btn ttsmod-btn ${showVoiceModal ? 'active' : ''}`}
-                    onClick={() => setShowVoiceModal(true)}
+                    className={`nav-btn ttsmod-btn ${ui.overlayMode === 'voice' ? 'active' : ''}`}
+                    onClick={() => setUi(prev => ({...prev, overlayMode: 'voice'}))}
                     title="Voice Settings"
                 >
                     Modify TTS 
                 </button>
             {/* Admin Model Switcher */}
             {auth.isAdmin && (
-                <button className="nav-btn model-btn" onClick={() => setShowModelModal(true)} title="Change AI Model">
+                <button className="nav-btn model-btn" onClick={() => setUi(prev => ({ ...prev, overlayMode: 'model' }))} title="Change AI Model">
                     MODEL
                 </button>
             )}
             {/* Admin API Key Button */}
             {auth.isAdmin && (
-                <button className="nav-btn key-btn" onClick={() => setShowKeyModal(true)} title="Update API Key">
+                <button className="nav-btn key-btn" onClick={() => setUi(prev => ({ ...prev, overlayMode: 'key' }))} title="Update API Key">
                     KEY
                 </button>
             )}
             {/* Admin Injection Button */}
             {auth.isAdmin && (
-                <button className="nav-btn god-mode-btn" onClick={() => setShowOverrideModal(true)} title="God Mode">
+                <button className="nav-btn god-mode-btn" onClick={() => setUi(prev => ({ ...prev, overlayMode: 'override' }))} title="God Mode">
                     GOD
                 </button>
             )}
@@ -452,8 +459,8 @@
             <div className="input-area">
             <span className="prompt-arrow">{'>'}</span>
             <input 
-                value={inputValue} 
-                onChange={e => setInputValue(e.target.value)}
+                value={actionInput} 
+                onChange={e => setActionInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && sendAction()}
                 placeholder={!game.isFinale ? "Describe your action..." : "Campaign has ended."}
                 /* filter out system messages so model changes don't enable chat too early */
@@ -472,10 +479,10 @@
         {/* Right side: Party Grid and Detail View */}
         <div className="right-panel">
             <div className="party-grid">
-            {partyStats.map((p, i) => (
+            {game.party.map((p, i) => (
                 <div 
                     key={i} 
-                    className={`mini-card ${p.name === selectedPlayer ? 'selected' : ''} ${p.name === username ? 'own-player' : ''}`}
+                    className={`mini-card ${p.name === selectedPlayer ? 'selected' : ''} ${p.name === auth.username ? 'own-player' : ''}`}
                     onClick={() => { setSelectedPlayer(p.name); setActiveTab('character'); }}
                 >
                 <div className="mini-name">#{i+1} {p.name}</div>
@@ -487,7 +494,7 @@
                 )}
 
                 {/* Admin Controls On Cards*/}
-                {auth.isAdmin && p.name !== username && (
+                {auth.isAdmin && p.name !== auth.username && (
                     <div className="card-admin-overlay">
                         <button className="admin-control-btn promote" onClick={(e) => handlePromote(p.name, e)} title="Promote to Admin">^</button>
                         <button className="admin-control-btn kick" onClick={(e) => handleKick(p.name, e)} title="Kick Player">x</button>
@@ -508,13 +515,13 @@
             <div className="tab-bar">
                 <button 
                 className={`tab-btn ${ui.activeTab === 'character' ? 'active' : ''}`}
-                onClick={() => {setActiveTab('character'); setShowOverrideModal(false);}}
+                onClick={() => {setActiveTab('character'); setUi(prev => ({...prev, overlayMode: ''}));}}
                 >
                 CHARACTER SHEET
                 </button>
                 <button 
                 className={`tab-btn ${ui.activeTab === 'world' ? 'active' : ''}`}
-                onClick={() => {setActiveTab('world'); setShowOverrideModal(false);}}
+                onClick={() => {setActiveTab('world'); setUi(prev => ({...prev, overlayMode: ''}));}}
                 >
                 WORLD SHEET
                 </button>
@@ -558,8 +565,8 @@
                                     <input 
                                         className="sheet-input"
                                         placeholder="e.g. Human, Warrior, Strong" 
-                                        value={isOwnSheet ? tagsInput : (displayedPlayer.tags ? displayedPlayer.tags.join(', ') : '')}
-                                        onChange={e => isOwnSheet && setTagsInput(e.target.value)}
+                                        value={isOwnSheet ? playerForm.tags : (displayedPlayer.tags ? displayedPlayer.tags.join(', ') : '')}
+                                        onChange={e => isOwnSheet && setPlayerForm(prev => ({...prev, tags: e}))}
                                         disabled={!isOwnSheet || (isOwnSheet && isLockedIn)} 
                                     />
                                 </div>
@@ -568,8 +575,8 @@
                                     <input 
                                         className="sheet-input"
                                         placeholder="e.g. Become King" 
-                                        value={isOwnSheet ? ambitionInput : (displayedPlayer.ambition || '')}
-                                        onChange={e => isOwnSheet && setAmbitionInput(e.target.value)}
+                                        value={isOwnSheet ? playerForm.ambitionInput : (displayedPlayer.ambition || '')}
+                                        onChange={e => isOwnSheet && setPlayerForm(prev => ({...prev, ambition: e}))}
                                         disabled={!isOwnSheet || (isOwnSheet && isLockedIn)} 
                                     />
                                 </div>
@@ -580,8 +587,8 @@
                                         <textarea 
                                             style={{flexGrow:1, background:'#000', border:'1px solid #333', color:'var(--text-main)', padding:'8px', outline:'none', resize:'none', fontSize:'0.9rem'}}
                                             placeholder="Hidden info..." 
-                                            value={secretInput}
-                                            onChange={e => setSecretInput(e.target.value)}
+                                            value={playerForm.secret}
+                                            onChange={e => setPlayerForm(prev => ({...prev, secret: e}))}
                                             disabled={isLockedIn} 
                                         />
                                     ) : (
@@ -706,7 +713,7 @@
             </div>
         </div>
             {/* Voice Settings Modal */}
-            {showVoiceModal && (
+            {ui.overlayMode === 'voice' && (
                 <div className="about-modal-overlay">
                     <div className="about-modal-box">
                         <h2 style={{color:'var(--terminal-green)', borderColor:'#004d00'}}>Configure SAM</h2>
@@ -813,7 +820,7 @@
                                 className="action-btn" 
                                 style={{flex:1, marginTop:0, background:'var(--terminal-green)'}} 
                                 onClick={() => {
-                                    setShowVoiceModal(false);
+                                    setUi(prev => ({...prev, overlayMode: 'voice'}));
                                     playTTS("GAOL has spoken.", samConfig); // test phrase
                                 }}
                             >
@@ -824,7 +831,7 @@
                 </div>
             )}
             {/* Model Selection Modal */}
-            {showModelModal && (
+            {ui.overlayMode === 'model' && (
                 <div className="about-modal-overlay">
                     <div className="about-modal-box">
                         <h2 style={{color:'#b080ff', borderColor:'#3a2a55'}}>NEURAL SHIFT</h2>
@@ -834,22 +841,22 @@
                             {['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'].map(m => (
                                 <button 
                                     key={m}
-                                    className={`model-option-btn ${currentModel === m ? 'active' : ''}`}
+                                    className={`model-option-btn ${game.currentModel === m ? 'active' : ''}`}
                                     onClick={() => handleModelChange(m)}
                                 >
                                     <span>{m}</span>
-                                    {currentModel === m && <span style={{color:'#b080ff'}}>●</span>}
+                                    {game.currentModel === m && <span style={{color:'#b080ff'}}>●</span>}
                                 </button>
                             ))}
                         </div>
                         
-                        <button className="join-sm-btn" style={{width: '100%', marginTop: '20px', borderColor:'#333', color:'#555'}} onClick={() => setShowModelModal(false)}>CANCEL</button>
+                        <button className="join-sm-btn" style={{width: '100%', marginTop: '20px', borderColor:'#333', color:'#555'}} onClick={() => setUi(prev => ({ ...prev, overlayMode: '' }))}>CANCEL</button>
                     </div>
                 </div>
             )}
             
             {/* Admin Override Modal */}
-            {showOverrideModal && (
+            {ui.overlayMode === 'override' && (
                 <div className="about-modal-overlay">
                     <div className="about-modal-box">
                         <h2 style={{color:'var(--alert-red)', borderColor:'#330000'}}>GOD MODE</h2>
@@ -864,7 +871,7 @@
                             style={{width: '100%', height:'150px'}}
                         />
                         <div className="override-actions" style={{width:'100%', marginTop:'15px'}}>
-                            <button className="ready-btn" style={{flex:1, background:'#333', color:'#888'}} onClick={() => setShowOverrideModal(false)}>CANCEL</button>
+                            <button className="ready-btn" style={{flex:1, background:'#333', color:'#888'}} onClick={() => setUi(prev => ({...prev, overlayMode: ''}))}>CANCEL</button>
                             <button className="ready-btn" style={{flex:1, background:'var(--alert-red)', color:'#000'}} onClick={sendOverride}>INJECT</button>
                         </div>
                     </div>
@@ -872,7 +879,7 @@
             )}
 
             {/* API Key Update Modal */}
-            {showKeyModal && (
+            {ui.overlayMode === 'key' && (
                 <div className="about-modal-overlay">
                     <div className="about-modal-box">
                         <h2 style={{color:'var(--tech-cyan)', borderColor:'#004d55'}}>API CONFIG</h2>
@@ -886,7 +893,7 @@
                             style={{textAlign: 'center', borderColor: 'var(--tech-cyan)', color: 'var(--tech-cyan)'}}
                         />
                         <div style={{display:'flex', gap:'10px', width:'100%', marginTop:'20px'}}>
-                            <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setShowKeyModal(false)}>CANCEL</button>
+                            <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setUi(prev => ({...prev, overlayMode: 'key'}))}>CANCEL</button>
                             <button className="join-sm-btn" style={{flex:1, borderColor:'var(--tech-cyan)', color:'var(--tech-cyan)'}} onClick={submitNewKey}>UPDATE</button>
                         </div>
                     </div>
@@ -894,7 +901,7 @@
             )}
 
             {/* Promotion Confirmation Modal */}
-            {showPromoteModal && (
+            {ui.overlayMode === 'promote' && (
                 <div className="about-modal-overlay">
                     <div className="about-modal-box">
                         <h2 style={{color:'var(--tech-cyan)', borderColor:'#004d55'}}>TRANSFER ADMIN</h2>
@@ -914,14 +921,14 @@
                             </label>
                         </div>
                         <div style={{display:'flex', gap:'10px', width:'100%'}}>
-                            <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setShowPromoteModal(false)}>CANCEL</button>
+                            <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setUi(prev => ({...prev, overlayMode: ''}))}>CANCEL</button>
                             <button className="join-sm-btn" style={{flex:1, borderColor:'var(--tech-cyan)', color:'var(--tech-cyan)'}} onClick={submitPromote}>CONFIRM</button>
                         </div>
                     </div>
                 </div>
             )}
         {/* Kick Confirmation Modal */}
-            {showKickModal && (
+            {ui.overlayMode === 'kick' && (
                 <div className="about-modal-overlay">
                     <div className="about-modal-box">
                         <h2 style={{color:'var(--alert-red)', borderColor:'#330000'}}>KICK PLAYER</h2>
@@ -929,7 +936,7 @@
                             Are you sure you want to remove <b>{kickTarget}</b> from the session?
                         </p>
                         <div style={{display:'flex', gap:'10px', width:'100%', marginTop:'10px'}}>
-                            <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setShowKickModal(false)}>CANCEL</button>
+                            <button className="join-sm-btn" style={{flex:1, borderColor:'#333', color:'#555'}} onClick={() => setUi(prev => ({...prev, overlayMode: ''}))}>CANCEL</button>
                             <button className="join-sm-btn" style={{flex:1, borderColor:'var(--alert-red)', color:'var(--alert-red)'}} onClick={confirmKick}>REMOVE</button>
                         </div>
                     </div>

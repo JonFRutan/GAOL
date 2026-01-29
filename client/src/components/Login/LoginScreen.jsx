@@ -3,7 +3,6 @@ import { useState, useEffect } from 'react';
 export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRooms, availableWorlds }) {
     //consts
     const [mode, setMode] = useState('join');               //used for controlling which modal the user is viewing. Defaults to the join page with the list of rooms
-    const [overlayMode, setOverlayMode] = useState('');     //overlay mode which can coexist atop normal modals. Used by 'about', 'customize', and 'data'
     const [selectedWorld, setSelectedWorld] = useState('');
     const [joinPassword, setJoinPassword] = useState('');
     const [creationForm, setCreationForm] = useState ({
@@ -19,8 +18,7 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
     useEffect(() => {
         // Listen for the server asking for a password
         socket.on('password_required', (data) => {
-            setUi(prev => ({ ...prev, pendingRoom: data.room })); // Store which room is locked
-            setMode('password'); // Switch local mode to show the password modal
+            setUi(prev => ({ ...prev, pendingRoom: data.room, overlayMode: 'password' })); // Store which room is locked
         });
 
         return () => {
@@ -62,6 +60,7 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
 
     //handles the room creation
     const handleCreate = () => {
+        console.log("[DEBUG] handleCreate invoked.")
         if (!auth.username || !auth.room) {
             setStatus("Username and Room Code required.");
             return;
@@ -69,8 +68,10 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
         //calculate map dimensions based on the 'size' string, default is medium with the following values
         let mapWidth = 1024;
         let mapHeight = 512;
-        if (creationForm.size === 'Small') { mapWidth = 512; mapHeight = 256; }
-        else if (creationForm.size === 'Large') { mapWidth = 2048; mapHeight = 1024; }
+        if (creationForm) {
+            if (creationForm.size === 'Small') { mapWidth = 512; mapHeight = 256; }
+            else if (creationForm.size === 'Large') { mapWidth = 2048; mapHeight = 1024; }
+        }
         const finalWorldSelection = selectedWorld || 'NEW';
 
         //sends a message to the server to create a room
@@ -225,7 +226,7 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
                   {/* customization modal*/}
                   {selectedWorld === 'NEW' && (
                        <div className="form-row" style={{marginBottom: '10px'}}>
-                           <button className="setup-btn" onClick={() => setOverlayMode('customize')}>
+                           <button className="setup-btn" onClick={() => setUi(prev => ({ ...prev, overlayMode: 'customize' }))}>
                                CUSTOMIZE WORLD
                            </button>
                        </div>
@@ -302,7 +303,7 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
 
         {/* login page footer */}
         <div className="login-footer">
-             <button className="footer-btn" onClick={() => setOverlayMode('about')}>ABOUT</button>
+             <button className="footer-btn" onClick={() => setUi(prev => ({ ...prev, overlayMode: 'about' }))}>ABOUT</button>
              <button className="footer-btn" onClick={() => setStatus("Data features coming soon...")}>DATA</button>
         </div>
         {/* credit where credit is due */}
@@ -314,7 +315,7 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
         </div>
 
         {/* About Modal */}
-        {overlayMode === 'about' && (
+        {ui.overlayMode === 'about' && (
              <div className="about-modal-overlay">
                  <div className="about-modal-box">
                       <h2>About GAOL</h2>
@@ -324,13 +325,13 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
                         <p>Create a room, define your setting, and embark on a collaborative storytelling journey with friends.</p>
                         <p><a href="https://github.com/JonFRutan/GAOL">GitHub</a> || <a href="https://www.linkedin.com/in/jonathanrutan/">LinkedIn</a> || <a href="https://jfelix.space">jfelix</a></p>
                       </div>
-                      <button className="join-sm-btn" style={{width: '100%', marginTop: '20px'}} onClick={() => setOverlayMode('')}>CLOSE</button>
+                      <button className="join-sm-btn" style={{width: '100%', marginTop: '20px'}} onClick={() => setUi(prev => ({ ...prev, overlayMode: '' }))}>CLOSE</button>
                  </div>
              </div>
         )}
 
         {/* Password Prompt Modal */}
-        {mode === 'password' && (
+        {ui.overlayMode === 'password' && (
             <div className="about-modal-overlay">
                 <div className="about-modal-box">
                     <h2>SECURE ROOM</h2>
@@ -354,7 +355,7 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
             </div>
         )}
         {/* World Creation Modal */}
-        {overlayMode ==='customize' && (
+        {ui.overlayMode ==='customize' && (
             <div className="about-modal-overlay">
                 <div className="about-modal-box">
                     <h2 style={{color:'var(--accent-gold)'}}>WORLD CREATION</h2>
@@ -397,7 +398,7 @@ export default function LoginScreen({auth, setAuth, ui, setUi, socket, activeRoo
                         </div>
                     </div>
 
-                    <button className="action-btn" style={{marginTop:'25px'}} onClick={() => setOverlayMode('')}>
+                    <button className="action-btn" style={{marginTop:'25px'}} onClick={() => setUi(prev => ({ ...prev, overlayMode: '' }))}>
                         CONFIRM SETTINGS
                     </button>
                 </div>

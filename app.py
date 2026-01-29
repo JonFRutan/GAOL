@@ -33,9 +33,9 @@ from flask_socketio import SocketIO, emit, join_room, leave_room as socket_leave
 load_dotenv()
 #flask API
 app = Flask(__name__, 
-            static_folder='client/dist/assets', 
-            template_folder='client/dist', 
-            static_url_path='/assets')
+            static_folder='/client/dist/assets', 
+            template_folder='/client/dist', 
+            static_url_path='/assets') #does nothing
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -948,6 +948,7 @@ def handle_get_worlds():
 #handles room creation logic separate from joining
 @socketio.on('create_room')
 def handle_create_room(data):
+    print(f"[DEBUG] Room is being created\n Dumping: {data}") 
     room_id = data['room']
     username = data['username']
     
@@ -964,6 +965,7 @@ def handle_create_room(data):
     req_height = data.get('height', 512)
 
     if room_id in games:
+        print(f"[DEBUG] Room ID exists: {room_id}")
         emit('status', {'msg': 'ERROR: Room ID already exists.'})
         return
         
@@ -972,6 +974,7 @@ def handle_create_room(data):
     has_env_key = DEFAULT_API_KEY and len(DEFAULT_API_KEY) > 10
     
     if not (has_custom_key or has_env_key):
+        print(f"[DEBUG] API Key not provided in room: {room_id}")
         emit('status', {'msg': 'ERROR: API Key Required (Server has none, please provide one).'})
         return
 
@@ -980,6 +983,7 @@ def handle_create_room(data):
     final_realism = req_realism
 
     if world_selection == 'NEW':
+        print("[DEBUG] Creating new world")
         #create new world with the provided settings
         w = World(
             new_world_name if new_world_name else f"World {room_id}",
@@ -1469,7 +1473,7 @@ def handle_model_change(data):
         return
 
     try:
-        room.ai_model = genai.GenerativeModel(new_model_name)
+        room.ai_model = new_model_name
         print(f"[ADMIN] System Model Switched to: {new_model_name}")
         
         #broadcast the shift message

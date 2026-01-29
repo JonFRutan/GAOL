@@ -32,7 +32,8 @@ function App() {
     activeModal: null,        //show modal booleans
     statusMsg: '',            //status messages, e.g. "Disconnected"
     activeTab: 'character',   //Tab active in game, defaults to your player tab
-    worldTab: 'history'       //active subtab within the world tab, defaults to the worlds history
+    worldTab: 'history',      //active subtab within the world tab, defaults to the worlds history
+    overlayMode: ''           //overlay mode which can coexist atop normal modals. Used by 'about', 'customize', and 'data'
   });
 
 
