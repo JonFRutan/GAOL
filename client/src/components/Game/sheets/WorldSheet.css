@@ -1,0 +1,51 @@
+.world-sheet { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+.world-header { margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; flex-shrink: 0; }
+.world-header h2 { font-size: 1.4rem; color: var(--accent-gold); margin: 0 0 5px 0; border: none; }
+.world-meta { font-size: 0.8rem; color: #666; text-transform: uppercase; }
+
+.map-placeholder {
+  width: 100%; height: 120px;
+  border: 2px dashed #333; background: #080808;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  margin-bottom: 20px; margin-top: 10px;
+  transition: border-color 0.3s; flex-shrink: 0;
+}
+.map-placeholder:hover { border-color: var(--accent-dim); }
+.map-text { font-family: 'Courier New', monospace; font-size: 1.2rem; color: var(--accent-dim); letter-spacing: 3px; font-weight: bold; }
+.map-subtext { font-size: 0.7rem; color: #444; margin-top: 5px; font-style: italic; }
+
+/* Sub-tabs */
+.sub-tab-bar { display: flex; gap: 10px; border-bottom: 1px solid #333; margin-bottom: 10px; flex-shrink: 0; }
+.sub-tab-btn {
+  background: none; border: none; color: #666;
+  font-family: inherit; font-size: 0.75rem;
+  padding: 5px 10px; cursor: pointer;
+  text-transform: uppercase; font-weight: bold;
+}
+.sub-tab-btn:hover { color: #aaa; }
+.sub-tab-btn.active { color: var(--accent-gold); border-bottom: 2px solid var(--accent-gold); }
+
+/* Entity list */
+.world-events-list {
+  flex-grow: 1; overflow-y: auto;
+  font-size: 0.85rem; color: #aaa;
+  border-top: 1px solid #333;
+  padding-top: 10px; padding-right: 5px;
+}
+.world-events-list::-webkit-scrollbar { width: 5px; }
+.world-events-list::-webkit-scrollbar-thumb { background: #333; }
+.world-events-list::-webkit-scrollbar-track { background: #000; }
+
+.entity-item {
+  background: #080808; border: 1px solid #222;
+  padding: 10px; margin-bottom: 10px; transition: border-color 0.2s;
+}
+.entity-item:hover { border-color: #444; }
+.entity-name { color: var(--accent-gold); font-weight: bold; font-size: 0.9rem; margin-bottom: 2px; }
+.entity-type { color: #555; font-size: 0.7rem; text-transform: uppercase; margin-bottom: 5px; }
+.entity-desc { font-size: 0.8rem; color: #aaa; line-height: 1.4; }
+.entity-meta { font-size: 0.75rem; color: var(--accent-dim); margin-top: 5px; font-style: italic; }
+.entity-disposition { font-size: 0.8rem; color: #aaac2d; margin-top: 5px; }
+.empty-text { color: #555; }
