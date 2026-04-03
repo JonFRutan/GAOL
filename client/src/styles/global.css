@@ -1,0 +1,62 @@
+/*Global CSS variables*/
+:root {
+  --bg-color: #050505;
+  --panel-bg: #0a0a0a;
+  --text-main: #b0b0b0;
+  --accent-gold: #FFC107;
+  --accent-dim: #5c4806;
+  --accent-gold-glow: #ffc10726;
+  --terminal-green: #00ff41;
+  --alert-red: #ff3333;
+  --tech-cyan: #00e5ff;
+}
+
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0; padding: 0;
+  background-color: var(--bg-color);
+  font-family: 'Space Mono', monospace;
+  color: var(--text-main);
+  height: 100vh; overflow: hidden;
+}
+
+button { border-radius: 0; }
+
+/* Scrollbar defaults */
+textarea::-webkit-scrollbar { width: 8px; }
+textarea::-webkit-scrollbar-track { background: #000; }
+textarea::-webkit-scrollbar-thumb { background: var(--accent-dim); }
+
+/* Links */
+a { font-weight: 500; color: #646cff; text-decoration: inherit; }
+a:hover { color: #535bf2; }
+
+/* About Modal (available everywhere on site) */
+.about-modal-overlay {
+  position: absolute; top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.8);
+  display: flex; justify-content: center; align-items: center;
+  z-index: 200;
+}
+
+.about-modal-box {
+  width: 500px; background: #0a0a0a;
+  border: 2px solid var(--accent-gold);
+  padding: 30px;
+  display: flex; flex-direction: column; align-items: center;
+  box-shadow: 0 0 30px var(--accent-dim);
+}
+
+.about-modal-box h2 {
+  color: var(--accent-gold); text-transform: uppercase;
+  margin-top: 0; border-bottom: 1px solid var(--accent-dim);
+  width: 100%; text-align: center; padding-bottom: 15px;
+}
+
+.about-content {
+  text-align: center; color: #ccc;
+  font-size: 0.95rem; line-height: 1.6;
+}
