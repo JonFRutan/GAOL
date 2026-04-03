@@ -4,6 +4,9 @@ __pycache__/
 client/node_modules/
 data/*.json
 
+
+# template stuff below
+
 # from the github Node template
 # Logs
 logs
